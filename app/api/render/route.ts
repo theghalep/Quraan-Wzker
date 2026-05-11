@@ -924,6 +924,12 @@ function getRenderConcurrency() {
     return Math.max(1, Math.floor(envConcurrency));
   }
 
+  const isRailway = Boolean(process.env.RAILWAY_ENVIRONMENT);
+
+  if (isRailway) {
+    return 1;
+  }
+
   const cpuCount = Math.max(os.cpus()?.length || 2, 2);
   const envRatio = Number(process.env.REMOTION_CONCURRENCY_RATIO);
   const ratio =
