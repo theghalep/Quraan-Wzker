@@ -1,0 +1,25 @@
+[phases.setup]
+nixPkgs = [
+  "nodejs_20",
+  "nspr",
+  "nss",
+  "atk",
+  "at-spi2-atk",
+  "cups",
+  "dbus",
+  "drm",
+  "expat",
+  "glib",
+  "gtk3",
+  "pango",
+  "cairo",
+  "alsa-lib",
+  "xorg.libX11",
+  "xorg.libXcomposite",
+  "xorg.libXdamage",
+  "xorg.libXext",
+  "xorg.libXfixes",
+  "xorg.libXrandr",
+  "xorg.libxcb",
+  "libxkbcommon"
+]
