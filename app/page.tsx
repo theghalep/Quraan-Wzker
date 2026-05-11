@@ -1898,9 +1898,7 @@ export default function Home() {
                             ✨{" "}
                             {buildReelHook(
                               aiSuggestions[0]?.detectedTopics || [],
-                              aiSuggestions[0]?.text ||
-                                aiSuggestions[0]?.matchedAyahText ||
-                                "",
+                              aiSuggestions[0]?.matchedAyahText || "",
                             )}
                           </p>
                           <p className="mt-1 text-xs text-neutral-300">
