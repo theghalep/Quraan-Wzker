@@ -10,11 +10,29 @@ import {
   useVideoConfig,
 } from "remotion";
 
+type CaptionPage = {
+  lines: Array<Array<{ word: string; originalIndex: number }>>;
+};
+
+type PreparedAyahRenderData = {
+  sourceText: string;
+  duration: number;
+  fontSize: number;
+  isLandscape: boolean;
+  isSquare: boolean;
+  highlightMode: string;
+  highlightSpeed: number;
+  words: string[];
+  captionPages: CaptionPage[];
+  wordStartTimes: number[];
+};
+
 type Ayah = {
   text: string;
   audio?: string;
   duration?: number;
   numberInSurah?: number;
+  __prepared?: PreparedAyahRenderData;
 };
 
 type Props = {
@@ -27,12 +45,31 @@ type Props = {
   backgroundType?: "video" | "image";
   isRemotionRender?: boolean;
 
+  exportPreset?: string;
+  exportQuality?: string;
+  exportWidth?: number;
+  exportHeight?: number;
+  exportFps?: number;
+  renderScale?: number;
+
   previewPlaying?: boolean;
   previewSeekSeconds?: number;
 
   textPosition?: string;
   animationStyle?: string;
   wordSpeed?: string;
+
+  showWordHighlight?: boolean;
+  wordHighlightColor?: string;
+  wordHighlightGlowColor?: string;
+  wordDimColor?: string;
+  wordHighlightStyle?: string;
+  wordHighlightTransition?: string;
+  wordHighlightSpeed?: number;
+  wordHighlightOffset?: number;
+  wordHighlightHold?: number;
+  wordHighlightMode?: string;
+  manualWordTimings?: Record<string, Array<number | null>>;
 
   showSurahName?: boolean;
   surahName?: string;
@@ -102,8 +139,12 @@ function RemotionVideo(props: Props) {
 
   const totalFrames = timeline[timeline.length - 1]?.endFrame || fps * 5;
   const totalSeconds = totalFrames / (fps || DEFAULT_FPS);
-  const currentAyah =
-    getTimelineItemByFrame(timeline, frame)?.ayah || normalized.safeAyahs[0];
+  const currentItem = getTimelineItemByFrame(timeline, frame) || timeline[0];
+  const currentAyah = currentItem?.ayah || normalized.safeAyahs[0];
+  const currentAyahLocalSeconds = Math.max(
+    (frame - (currentItem?.startFrame || 0)) / (fps || DEFAULT_FPS),
+    0,
+  );
 
   const videoProgress = Math.min((frame / Math.max(totalFrames, 1)) * 100, 100);
   const remainingVideoSeconds = Math.max(
@@ -115,6 +156,7 @@ function RemotionVideo(props: Props) {
     <VideoCanvas
       {...normalized}
       currentAyah={currentAyah}
+      currentAyahLocalSeconds={currentAyahLocalSeconds}
       videoProgress={videoProgress}
       remainingVideoSeconds={remainingVideoSeconds}
       isRemotionRender
@@ -308,6 +350,7 @@ function BrowserPreviewVideo(props: Props) {
     <VideoCanvas
       {...normalized}
       currentAyah={currentAyah}
+      currentAyahLocalSeconds={ayahLocalTime}
       videoProgress={videoProgress}
       remainingVideoSeconds={remainingVideoSeconds}
       isRemotionRender={false}
@@ -334,10 +377,28 @@ function useNormalizedProps({
   fontFamily = "Amiri",
   backgroundVideoUrl = "",
   backgroundType = "video",
+  exportPreset = "reels",
+  exportQuality = "high",
+  exportWidth = 1080,
+  exportHeight = 1920,
+  exportFps = 30,
+  renderScale = 1,
 
   textPosition = "center",
   animationStyle = "slide",
   wordSpeed = "normal",
+
+  showWordHighlight = true,
+  wordHighlightColor = "#34d399",
+  wordHighlightGlowColor = "#34d399",
+  wordDimColor = "rgba(255,255,255,0.62)",
+  wordHighlightStyle = "glow",
+  wordHighlightTransition = "scale",
+  wordHighlightSpeed = 1,
+  wordHighlightOffset = 0,
+  wordHighlightHold = 0.12,
+  wordHighlightMode = "smart",
+  manualWordTimings = {},
 
   showProgressBar = true,
   showCountdownTimer = true,
@@ -389,10 +450,28 @@ function useNormalizedProps({
     fontFamily,
     backgroundVideoUrl,
     backgroundType,
+    exportPreset,
+    exportQuality,
+    exportWidth,
+    exportHeight,
+    exportFps,
+    renderScale,
 
     textPosition,
     animationStyle,
     wordSpeed,
+
+    showWordHighlight,
+    wordHighlightColor,
+    wordHighlightGlowColor,
+    wordDimColor,
+    wordHighlightStyle,
+    wordHighlightTransition,
+    wordHighlightSpeed,
+    wordHighlightOffset,
+    wordHighlightHold,
+    wordHighlightMode,
+    manualWordTimings,
 
     showProgressBar,
     showCountdownTimer,
@@ -467,6 +546,7 @@ function getTimelineItemBySeconds(timeline: TimelineItem[], seconds: number) {
 
 function VideoCanvas({
   currentAyah,
+  currentAyahLocalSeconds,
   videoProgress,
   remainingVideoSeconds,
   isRemotionRender,
@@ -479,8 +559,26 @@ function VideoCanvas({
   fontFamily,
   backgroundVideoUrl,
   backgroundType,
+  exportPreset,
+  exportQuality,
+  exportWidth,
+  exportHeight,
+  exportFps,
+  renderScale,
   textPosition,
   animationStyle,
+
+  showWordHighlight,
+  wordHighlightColor,
+  wordHighlightGlowColor,
+  wordDimColor,
+  wordHighlightStyle,
+  wordHighlightTransition,
+  wordHighlightSpeed,
+  wordHighlightOffset,
+  wordHighlightHold,
+  wordHighlightMode,
+  manualWordTimings,
 
   showProgressBar,
   showCountdownTimer,
@@ -511,6 +609,7 @@ function VideoCanvas({
   brandNameStyle,
 }: ReturnType<typeof useNormalizedProps> & {
   currentAyah: Ayah;
+  currentAyahLocalSeconds: number;
   videoProgress: number;
   remainingVideoSeconds: number;
   isRemotionRender: boolean;
@@ -554,14 +653,20 @@ function VideoCanvas({
 }
 `;
 
-  const adaptiveTextSize =
-    currentAyah?.text?.length > 95
-      ? textSize * 0.48
-      : currentAyah?.text?.length > 75
-        ? textSize * 0.56
-        : currentAyah?.text?.length > 45
-          ? textSize * 0.7
-          : textSize;
+  const exportAspectRatio = exportWidth / Math.max(exportHeight, 1);
+  const isLandscapeExport = exportAspectRatio > 1.2;
+  const isSquareExport = exportAspectRatio >= 0.9 && exportAspectRatio <= 1.1;
+  const captionLayout = getOpticalCaptionLayout({
+    width: exportWidth,
+    height: exportHeight,
+    requestedTextSize: textSize,
+  });
+
+  const layoutOverlayStrength = isLandscapeExport
+    ? "linear-gradient(to bottom, rgba(0,0,0,0.16), rgba(0,0,0,0.26) 35%, rgba(0,0,0,0.42))"
+    : "linear-gradient(to bottom, rgba(0,0,0,0.20), rgba(0,0,0,0.32) 35%, rgba(0,0,0,0.34))";
+
+  const adaptiveTextSize = captionLayout.fontSize;
 
   const textVerticalPosition = getTextVerticalPosition(textPosition);
   const ayahAnimation = getAyahAnimation(
@@ -671,8 +776,7 @@ function VideoCanvas({
           style={{
             position: "absolute",
             inset: 0,
-            background:
-              "linear-gradient(to bottom, rgba(0,0,0,0.22), rgba(0,0,0,0.35) 35%, rgba(0,0,0,0.72))",
+            background: layoutOverlayStrength,
             zIndex: 1,
           }}
         />
@@ -682,7 +786,7 @@ function VideoCanvas({
             position: "absolute",
             inset: 0,
             background:
-              "radial-gradient(circle at center, transparent 30%, rgba(0,0,0,0.42) 100%)",
+              "radial-gradient(circle at center, transparent 30%, rgba(0,0,0,0.24) 100%)",
             zIndex: 2,
             pointerEvents: "none",
           }}
@@ -692,11 +796,15 @@ function VideoCanvas({
           <FloatingText
             text={safeSurahTitle}
             color={surahNameColor}
-            size={surahNameSize}
+            size={
+              surahNameSize *
+              (isLandscapeExport ? 0.78 : isSquareExport ? 0.9 : 1)
+            }
             position={surahNamePosition}
             top={45}
             bottom={105}
             variant="pill"
+            isRemotionRender={isRemotionRender}
           />
         )}
 
@@ -704,11 +812,15 @@ function VideoCanvas({
           <FloatingText
             text={reciter}
             color={reciterNameColor}
-            size={reciterNameSize}
+            size={
+              reciterNameSize *
+              (isLandscapeExport ? 0.78 : isSquareExport ? 0.9 : 1)
+            }
             position={reciterNamePosition}
             top={95}
             bottom={65}
             variant="plain"
+            isRemotionRender={isRemotionRender}
           />
         )}
 
@@ -716,7 +828,10 @@ function VideoCanvas({
           <FloatingText
             text={brandName}
             color={brandNameColor}
-            size={brandNameSize}
+            size={
+              brandNameSize *
+              (isLandscapeExport ? 0.78 : isSquareExport ? 0.9 : 1)
+            }
             position={brandNamePosition}
             top={18}
             bottom={25}
@@ -727,6 +842,7 @@ function VideoCanvas({
                   ? "glow"
                   : "plain"
             }
+            isRemotionRender={isRemotionRender}
           />
         )}
 
@@ -739,7 +855,7 @@ function VideoCanvas({
             display: "flex",
             alignItems: textVerticalPosition,
             justifyContent: "center",
-            padding: "0 55px",
+            padding: `0 ${captionLayout.sidePadding}px`,
             textAlign: "center",
             animation: ayahAnimation,
           }}
@@ -747,18 +863,20 @@ function VideoCanvas({
           <div
             style={{
               color: textColor,
-              fontSize: textSize * 0.42,
+              fontSize: Math.max(captionLayout.fontSize * 0.42, 16),
               fontWeight: "bold",
-              lineHeight: 1.9,
-              textShadow: "0 0 32px rgba(0,0,0,0.98)",
-              backdropFilter: "blur(5px)",
-              background:
-                "linear-gradient(135deg, rgba(0,0,0,0.24), rgba(0,0,0,0.08))",
-              borderRadius: 28,
-              padding: "24px 28px",
-              border: "1px solid rgba(255,255,255,0.12)",
-              boxShadow: "0 18px 70px rgba(0,0,0,0.48)",
+              lineHeight: captionLayout.lineHeight,
+              textShadow: isRemotionRender
+                ? "0 0 10px rgba(0,0,0,0.9)"
+                : "0 0 12px rgba(0,0,0,0.98)",
+              background: "transparent",
+              borderRadius: 0,
+              padding: `${captionLayout.paddingY}px ${captionLayout.paddingX}px`,
+              border: "none",
+              boxShadow: "none",
+              width: "100%",
               maxWidth: "100%",
+              overflow: "hidden",
             }}
           >
             <AnimatedText
@@ -769,29 +887,27 @@ function VideoCanvas({
               size={adaptiveTextSize}
               fontFamily={fontFamily}
               animationStyle={animationStyle}
+              showWordHighlight={showWordHighlight}
+              currentTime={currentAyahLocalSeconds}
+              duration={currentAyah?.duration || 5}
+              highlightColor={wordHighlightColor}
+              highlightGlowColor={wordHighlightGlowColor}
+              dimColor={wordDimColor}
+              highlightStyle={wordHighlightStyle}
+              transitionStyle={wordHighlightTransition}
+              highlightSpeed={wordHighlightSpeed}
+              highlightOffset={wordHighlightOffset}
+              highlightHold={wordHighlightHold}
+              highlightMode={wordHighlightMode}
+              manualTimings={
+                manualWordTimings[getAyahManualTimingKey(currentAyah)] || []
+              }
+              preparedData={currentAyah?.__prepared}
+              ayahNumber={currentAyah?.numberInSurah}
+              isLandscapeCaption={Boolean((captionLayout as any).isLandscape)}
+              isSquareCaption={Boolean((captionLayout as any).isSquare)}
+              isRemotionRender={isRemotionRender}
             />
-
-            {currentAyah?.numberInSurah && (
-              <span
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  marginRight: 12,
-                  marginTop: 8,
-                  minWidth: 34,
-                  height: 34,
-                  borderRadius: 999,
-                  fontSize: Math.min(textSize * 0.42, 20),
-                  opacity: 0.95,
-                  color: textColor,
-                  background: "rgba(255,255,255,0.1)",
-                  border: "1px solid rgba(255,255,255,0.14)",
-                }}
-              >
-                {currentAyah.numberInSurah}
-              </span>
-            )}
           </div>
         </div>
 
@@ -808,7 +924,9 @@ function VideoCanvas({
               color: timerColor,
               fontSize: timerSize,
               fontWeight: "bold",
-              textShadow: "0 0 20px rgba(0,0,0,0.9)",
+              textShadow: isRemotionRender
+                ? "0 0 8px rgba(0,0,0,0.84)"
+                : "0 0 20px rgba(0,0,0,0.9)",
             }}
           >
             {Math.floor(remainingVideoSeconds / 60)}:
@@ -820,8 +938,8 @@ function VideoCanvas({
           <div
             style={{
               position: "absolute",
-              left: 45,
-              right: 45,
+              left: isLandscapeExport ? 90 : 45,
+              right: isLandscapeExport ? 90 : 45,
               top: progressPosition === "top" ? 12 : undefined,
               bottom: progressPosition === "bottom" ? 12 : undefined,
               height: progressHeight,
@@ -829,7 +947,9 @@ function VideoCanvas({
               background: "rgba(255,255,255,0.18)",
               zIndex: 30,
               overflow: "hidden",
-              boxShadow: "0 0 22px rgba(0,0,0,0.45)",
+              boxShadow: isRemotionRender
+                ? "0 0 6px rgba(0,0,0,0.28)"
+                : "0 0 22px rgba(0,0,0,0.45)",
             }}
           >
             <div
@@ -838,7 +958,9 @@ function VideoCanvas({
                 height: "100%",
                 borderRadius: 999,
                 background: progressColor,
-                boxShadow: `0 0 18px ${progressColor}`,
+                boxShadow: isRemotionRender
+                  ? "none"
+                  : `0 0 18px ${progressColor}`,
                 transition: isRemotionRender ? "none" : "width 0.08s linear",
               }}
             />
@@ -857,6 +979,7 @@ function FloatingText({
   top,
   bottom,
   variant = "plain",
+  isRemotionRender = false,
 }: {
   text: string;
   color: string;
@@ -865,6 +988,7 @@ function FloatingText({
   top: number;
   bottom: number;
   variant?: "plain" | "pill" | "glow";
+  isRemotionRender?: boolean;
 }) {
   const isPill = variant === "pill";
   const isGlow = variant === "glow";
@@ -883,9 +1007,13 @@ function FloatingText({
         top:
           position === "top" ? top : position === "center" ? "48%" : undefined,
         bottom: position === "bottom" ? bottom : undefined,
-        textShadow: isGlow
-          ? `0 0 22px ${color}, 0 0 35px rgba(0,0,0,0.95)`
-          : "0 0 25px rgba(0,0,0,0.95)",
+        textShadow: isRemotionRender
+          ? isGlow
+            ? `0 0 6px ${color}, 0 0 10px rgba(0,0,0,0.86)`
+            : "0 0 8px rgba(0,0,0,0.86)"
+          : isGlow
+            ? `0 0 22px ${color}, 0 0 12px rgba(0,0,0,0.95)`
+            : "0 0 25px rgba(0,0,0,0.95)",
         letterSpacing: 1,
       }}
     >
@@ -898,7 +1026,7 @@ function FloatingText({
           borderRadius: 999,
           background: isPill ? "rgba(0,0,0,0.28)" : "transparent",
           border: isPill ? "1px solid rgba(255,255,255,0.14)" : "none",
-          backdropFilter: isPill ? "blur(12px)" : "none",
+          backdropFilter: isPill && !isRemotionRender ? "blur(12px)" : "none",
         }}
       >
         {text}
@@ -907,43 +1035,671 @@ function FloatingText({
   );
 }
 
+function getOpticalCaptionLayout({
+  width,
+  height,
+  requestedTextSize,
+}: {
+  width: number;
+  height: number;
+  requestedTextSize: number;
+}) {
+  const safeWidth = Math.max(width || 1080, 360);
+  const safeHeight = Math.max(height || 1920, 360);
+  const aspectRatio = safeWidth / safeHeight;
+
+  const isLandscape = aspectRatio > 1.2;
+  const isSquare = aspectRatio >= 0.9 && aspectRatio <= 1.1;
+
+  const referenceWidth = 1080;
+  const referenceHeight = 1920;
+
+  const physicalScale = Math.min(
+    safeWidth / referenceWidth,
+    safeHeight / referenceHeight,
+  );
+
+  const opticalScale = Math.pow(clampNumber(physicalScale, 0.52, 1.55), 0.3);
+  const userScale = clampNumber(requestedTextSize / 72, 0.72, 1.08);
+
+  // Vertical captions must stay elegant and horizontal, not huge stacked words.
+  const baseFont = isLandscape ? 68 : isSquare ? 52 : 42;
+
+  const fontSize = clampNumber(
+    baseFont * opticalScale * userScale,
+    isLandscape ? 38 : isSquare ? 28 : 24,
+    isLandscape ? 68 : isSquare ? 44 : 32,
+  );
+
+  return {
+    fontSize,
+    maxWidth: isLandscape ? "96%" : isSquare ? "92%" : "94%",
+    lineHeight: isLandscape ? 1.52 : 1.82,
+    sidePadding: isLandscape
+      ? Math.round(safeWidth * 0.035)
+      : Math.round(safeWidth * 0.055),
+    paddingX: isLandscape ? 4 : 6,
+    paddingY: isLandscape ? 2 : 3,
+    borderRadius: 0,
+    isLandscape,
+    isSquare,
+  };
+}
+
 function AnimatedText({
   text,
   color,
   size,
   fontFamily,
   animationStyle,
+  showWordHighlight,
+  currentTime,
+  duration,
+  highlightColor,
+  highlightGlowColor,
+  dimColor,
+  highlightStyle,
+  transitionStyle,
+  highlightSpeed,
+  highlightOffset,
+  highlightHold,
+  highlightMode,
+  manualTimings,
+  preparedData,
+  ayahNumber,
+  isLandscapeCaption = false,
+  isSquareCaption = false,
+  isRemotionRender = false,
 }: {
   text: string;
   color: string;
   size: number;
   fontFamily: string;
   animationStyle: string;
+  showWordHighlight: boolean;
+  currentTime: number;
+  duration: number;
+  highlightColor: string;
+  highlightGlowColor: string;
+  dimColor: string;
+  highlightStyle: string;
+  transitionStyle: string;
+  highlightSpeed: number;
+  highlightOffset: number;
+  highlightHold: number;
+  highlightMode: string;
+  manualTimings: Array<number | null>;
+  preparedData?: PreparedAyahRenderData;
+  ayahNumber?: number;
+  isLandscapeCaption?: boolean;
+  isSquareCaption?: boolean;
+  isRemotionRender?: boolean;
 }) {
+  const safeSize = Math.min(Math.max(size, 22), 56);
+  const hasManualTimings = manualTimings.some(
+    (time) => typeof time === "number" && Number.isFinite(time),
+  );
+
+  const canUsePreparedData = Boolean(
+    preparedData &&
+    preparedData.sourceText === text &&
+    Math.abs(preparedData.duration - duration) < 0.001 &&
+    Math.abs(preparedData.fontSize - safeSize) < 0.001 &&
+    preparedData.isLandscape === isLandscapeCaption &&
+    preparedData.isSquare === isSquareCaption &&
+    preparedData.highlightMode === highlightMode &&
+    Math.abs(preparedData.highlightSpeed - highlightSpeed) < 0.001,
+  );
+
+  const words = useMemo(() => {
+    if (canUsePreparedData && preparedData?.words?.length) {
+      return preparedData.words;
+    }
+
+    return splitArabicWords(text);
+  }, [canUsePreparedData, preparedData, text]);
+
+  const manualTimingsKey = useMemo(
+    () => manualTimings.map((time) => time ?? "").join("|"),
+    [manualTimings],
+  );
+
+  const captionPages = useMemo(() => {
+    if (canUsePreparedData && preparedData?.captionPages?.length) {
+      return preparedData.captionPages;
+    }
+
+    return buildPagedCaptionLines({
+      words,
+      fontSize: safeSize,
+      isLandscape: isLandscapeCaption,
+      isSquare: isSquareCaption,
+    });
+  }, [
+    canUsePreparedData,
+    preparedData,
+    words,
+    safeSize,
+    isLandscapeCaption,
+    isSquareCaption,
+  ]);
+
+  const wordStartTimes = useMemo(() => {
+    if (
+      canUsePreparedData &&
+      !hasManualTimings &&
+      preparedData?.wordStartTimes?.length
+    ) {
+      return preparedData.wordStartTimes;
+    }
+
+    return buildMergedWordStartTimes({
+      words,
+      duration,
+      speed: highlightSpeed,
+      mode: highlightMode,
+      manualTimings,
+    });
+    // manualTimings is usually a fresh array from props, so the stable key avoids
+    // recalculating recitation weights on every rendered frame.
+  }, [
+    canUsePreparedData,
+    hasManualTimings,
+    preparedData,
+    words,
+    duration,
+    highlightSpeed,
+    highlightMode,
+    manualTimingsKey,
+  ]);
+
+  const activeWordIndex = getActiveWordIndexFast({
+    currentTime,
+    offset: highlightOffset,
+    duration,
+    speed: highlightSpeed,
+    wordCount: words.length,
+    startTimes: wordStartTimes,
+  });
+
+  const activePage = captionPages.find((page) =>
+    page.lines.some((line) =>
+      line.some((item) => item.originalIndex === activeWordIndex),
+    ),
+  ) ||
+    captionPages[0] || {
+      lines: [words.map((word, index) => ({ word, originalIndex: index }))],
+    };
+
+  const baseStyle: React.CSSProperties = {
+    color,
+    fontSize: safeSize,
+    fontWeight: 900,
+    lineHeight: 1.58,
+    textShadow: isRemotionRender
+      ? "0 1px 3px rgba(0,0,0,0.92), 0 0 5px rgba(0,0,0,0.52)"
+      : "0 2px 6px rgba(0,0,0,0.98), 0 0 16px rgba(0,0,0,0.68)",
+    direction: "rtl",
+    unicodeBidi: "isolate",
+    fontFamily: `"${fontFamily}", "Amiri", "Noto Naskh Arabic", serif`,
+    textAlign: "center",
+    whiteSpace: "normal",
+    wordBreak: "normal",
+    wordSpacing: "0.04em",
+    overflowWrap: "normal",
+    maxWidth: "100%",
+    letterSpacing: "0",
+    animation:
+      animationStyle === "glow" && !isRemotionRender
+        ? "glowText 2.2s ease-in-out infinite"
+        : undefined,
+  };
+
+  if (!showWordHighlight || words.length <= 1) {
+    return <div style={baseStyle}>{text}</div>;
+  }
+
   return (
-    <div
-      style={{
-        color,
-        fontSize: Math.min(size, 38),
-        fontWeight: "bold",
-        lineHeight: 1.95,
-        textShadow: "0 0 30px rgba(0,0,0,0.95)",
-        direction: "rtl",
-        unicodeBidi: "isolate",
-        fontFamily: `"${fontFamily}", "Amiri", "Noto Naskh Arabic", serif`,
-        textAlign: "center",
-        whiteSpace: "normal",
-        wordBreak: "normal",
-        maxWidth: "100%",
-        animation:
-          animationStyle === "glow"
-            ? "glowText 2.2s ease-in-out infinite"
-            : undefined,
-      }}
-    >
-      {text}
+    <div style={baseStyle}>
+      {activePage.lines.map((line, lineIndex) => (
+        <div
+          key={`caption-page-line-${lineIndex}`}
+          style={{
+            display: "block",
+            whiteSpace: "nowrap",
+            maxWidth: "100%",
+            overflow: "visible",
+          }}
+        >
+          {line.map((item, visibleIndex) => {
+            const isActive = item.originalIndex === activeWordIndex;
+            const isPrevious =
+              highlightMode === "karaoke" &&
+              item.originalIndex < activeWordIndex;
+
+            const wordStyle = getHighlightedWordStyle({
+              isActive,
+              isPrevious,
+              color,
+              dimColor,
+              highlightColor,
+              highlightGlowColor,
+              highlightStyle,
+              transitionStyle,
+              hold: highlightHold,
+              isRemotionRender,
+            });
+
+            return (
+              <span
+                key={`${item.word}-${item.originalIndex}`}
+                style={wordStyle}
+              >
+                {item.word}
+                {ayahNumber &&
+                  visibleIndex === line.length - 1 &&
+                  lineIndex === activePage.lines.length - 1 && (
+                    <span
+                      style={{
+                        display: "inline-block",
+                        marginInlineStart: Math.max(safeSize * 0.16, 7),
+                        fontSize: Math.max(safeSize * 0.42, 14),
+                        fontWeight: 900,
+                        lineHeight: 1,
+                        color: "rgba(255,255,255,0.96)",
+                        textShadow: isRemotionRender
+                          ? "0 1px 3px rgba(0,0,0,0.84)"
+                          : "0 1px 5px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.45)",
+                        verticalAlign: "-0.02em",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {`﴿${toArabicNumbers(ayahNumber)}﴾`}
+                    </span>
+                  )}
+                {visibleIndex < line.length - 1 ? " " : ""}
+              </span>
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
+}
+
+function buildPagedCaptionLines({
+  words,
+  fontSize,
+  isLandscape = false,
+  isSquare = false,
+}: {
+  words: string[];
+  fontSize: number;
+  isLandscape?: boolean;
+  isSquare?: boolean;
+}) {
+  if (!words.length) return [];
+
+  const maxWordsPerPage = isLandscape ? 20 : isSquare ? 13 : 10;
+  const targetCharsPerPage = isLandscape
+    ? clampNumber(Math.round(fontSize * 3.2), 110, 190)
+    : isSquare
+      ? clampNumber(Math.round(fontSize * 2.5), 72, 120)
+      : clampNumber(Math.round(fontSize * 2.35), 56, 92);
+
+  const pages: Array<{
+    lines: Array<Array<{ word: string; originalIndex: number }>>;
+  }> = [];
+
+  let pageItems: Array<{ word: string; originalIndex: number }> = [];
+  let pageLength = 0;
+
+  words.forEach((word, index) => {
+    const nextLength = pageLength + word.length + (pageItems.length ? 1 : 0);
+
+    const shouldStartNewPage =
+      pageItems.length >= 5 &&
+      (nextLength > targetCharsPerPage || pageItems.length >= maxWordsPerPage);
+
+    if (shouldStartNewPage) {
+      pages.push({
+        lines: splitCaptionPageIntoLines(pageItems),
+      });
+
+      pageItems = [];
+      pageLength = 0;
+    }
+
+    pageItems.push({ word, originalIndex: index });
+    pageLength += word.length + (pageItems.length > 1 ? 1 : 0);
+  });
+
+  if (pageItems.length) {
+    pages.push({
+      lines: splitCaptionPageIntoLines(pageItems),
+    });
+  }
+
+  return pages;
+}
+
+function splitCaptionPageIntoLines(
+  items: Array<{ word: string; originalIndex: number }>,
+) {
+  if (items.length <= 4) {
+    return [items];
+  }
+
+  let bestSplit = Math.ceil(items.length / 2);
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (let split = 2; split <= items.length - 2; split += 1) {
+    const firstText = items
+      .slice(0, split)
+      .map((item) => item.word)
+      .join(" ");
+
+    const secondText = items
+      .slice(split)
+      .map((item) => item.word)
+      .join(" ");
+
+    const firstLength = firstText.length;
+    const secondLength = secondText.length;
+
+    const balancePenalty = Math.abs(firstLength - secondLength);
+    const orphanPenalty = items.length - split <= 2 || split <= 2 ? 100 : 0;
+
+    const score = balancePenalty + orphanPenalty;
+
+    if (score < bestScore) {
+      bestScore = score;
+      bestSplit = split;
+    }
+  }
+
+  return [items.slice(0, bestSplit), items.slice(bestSplit)];
+}
+
+function toArabicNumbers(value: number | string) {
+  return String(value).replace(/\d/g, (digit) => "٠١٢٣٤٥٦٧٨٩"[Number(digit)]);
+}
+
+function splitArabicWords(text: string) {
+  return text.trim().split(/\s+/).filter(Boolean);
+}
+
+function buildMergedWordStartTimes({
+  words,
+  duration,
+  speed,
+  mode,
+  manualTimings = [],
+}: {
+  words: string[];
+  duration: number;
+  speed: number;
+  mode: string;
+  manualTimings?: Array<number | null>;
+}) {
+  if (!words.length) return [];
+
+  const safeDuration = Math.max(duration || 5, 0.5);
+  const safeSpeed = Math.max(speed || 1, 0.25);
+  const mappedDuration = safeDuration / safeSpeed;
+
+  const autoStartTimes = buildAutoWordStartTimes({
+    words,
+    duration: mappedDuration,
+    mode,
+  });
+
+  return autoStartTimes.map((time, index) => {
+    const manualTime = manualTimings[index];
+
+    return typeof manualTime === "number"
+      ? clampNumber(manualTime, 0, mappedDuration)
+      : time;
+  });
+}
+
+function getActiveWordIndexFast({
+  currentTime,
+  offset,
+  duration,
+  speed,
+  wordCount,
+  startTimes,
+}: {
+  currentTime: number;
+  offset: number;
+  duration: number;
+  speed: number;
+  wordCount: number;
+  startTimes: number[];
+}) {
+  if (!wordCount || !startTimes.length) return 0;
+
+  const safeDuration = Math.max(duration || 5, 0.5);
+  const safeSpeed = Math.max(speed || 1, 0.25);
+  const mappedDuration = safeDuration / safeSpeed;
+  const syncedTime = clampNumber(currentTime + offset, 0, mappedDuration);
+
+  let low = 0;
+  let high = startTimes.length - 1;
+  let activeIndex = 0;
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+
+    if (startTimes[mid] <= syncedTime) {
+      activeIndex = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return clampNumber(activeIndex, 0, wordCount - 1);
+}
+
+function getActiveWordIndex({
+  currentTime,
+  duration,
+  words,
+  speed,
+  offset,
+  mode,
+  manualTimings = [],
+}: {
+  currentTime: number;
+  duration: number;
+  words: string[];
+  speed: number;
+  offset: number;
+  mode: string;
+  manualTimings?: Array<number | null>;
+}) {
+  if (!words.length) return 0;
+
+  const safeDuration = Math.max(duration || 5, 0.5);
+  const safeSpeed = Math.max(speed || 1, 0.25);
+  const mappedDuration = safeDuration / safeSpeed;
+  const syncedTime = clampNumber(currentTime + offset, 0, mappedDuration);
+
+  const autoStartTimes = buildAutoWordStartTimes({
+    words,
+    duration: mappedDuration,
+    mode,
+  });
+
+  const mergedStartTimes = autoStartTimes.map((time, index) => {
+    const manualTime = manualTimings[index];
+
+    return typeof manualTime === "number"
+      ? clampNumber(manualTime, 0, mappedDuration)
+      : time;
+  });
+
+  let activeIndex = 0;
+  let activeStart = -1;
+
+  for (let index = 0; index < mergedStartTimes.length; index += 1) {
+    const startTime = mergedStartTimes[index];
+
+    if (syncedTime >= startTime && startTime >= activeStart) {
+      activeIndex = index;
+      activeStart = startTime;
+    }
+  }
+
+  return clampNumber(activeIndex, 0, words.length - 1);
+}
+
+function buildAutoWordStartTimes({
+  words,
+  duration,
+  mode,
+}: {
+  words: string[];
+  duration: number;
+  mode: string;
+}) {
+  if (!words.length) return [];
+
+  if (mode === "linear" || mode === "karaoke") {
+    const wordDuration = duration / words.length;
+
+    return words.map((_, index) => index * wordDuration);
+  }
+
+  const weights = words.map(getRecitationWordWeight);
+  const totalWeight = weights.reduce((sum, item) => sum + item, 0);
+
+  let cursor = 0;
+
+  return words.map((_, index) => {
+    const start = cursor;
+    const share = weights[index] / Math.max(totalWeight, 0.001);
+
+    cursor += share * duration;
+
+    return start;
+  });
+}
+
+function getRecitationWordWeight(rawWord: string) {
+  const word = rawWord || "";
+  const cleanWord = word.replace(/[^\u0600-\u06FFa-zA-Z0-9]/g, "");
+
+  const letters = cleanWord.length;
+  const harakat = (word.match(/[ًٌٍَُِّْٰ]/g) || []).length;
+  const maddLetters = (word.match(/[اويىآ]/g) || []).length;
+  const shadda = (word.match(/[ّ]/g) || []).length;
+
+  const hasSmallPause = /[،؛]/.test(word);
+  const hasBigPause = /[.؟!ۚۖۗۙۛۜ]/.test(word);
+  const hasAyahStop = /[۝۞]/.test(word);
+
+  let weight = 0.9;
+
+  weight += letters * 0.28;
+  weight += harakat * 0.035;
+  weight += maddLetters * 0.24;
+  weight += shadda * 0.2;
+
+  if (hasSmallPause) weight += 0.75;
+  if (hasBigPause) weight += 1.15;
+  if (hasAyahStop) weight += 1.4;
+
+  return clampNumber(weight, 0.9, 4.5);
+}
+
+function getHighlightedWordStyle({
+  isActive,
+  isPrevious,
+  color,
+  dimColor,
+  highlightColor,
+  highlightGlowColor,
+  highlightStyle,
+  transitionStyle,
+  hold,
+  isRemotionRender = false,
+}: {
+  isActive: boolean;
+  isPrevious: boolean;
+  color: string;
+  dimColor: string;
+  highlightColor: string;
+  highlightGlowColor: string;
+  highlightStyle: string;
+  transitionStyle: string;
+  hold: number;
+  isRemotionRender?: boolean;
+}) {
+  const activeTransform = "none";
+
+  const base: React.CSSProperties = {
+    display: "inline-block",
+    margin: "0 3px",
+    padding:
+      highlightStyle === "pill" || highlightStyle === "gold"
+        ? "0 9px"
+        : "0 2px",
+    borderRadius: 999,
+    color: isPrevious ? color : "rgba(255,255,255,0.9)",
+    opacity: 1,
+    transition: isRemotionRender
+      ? "none"
+      : `color ${Math.max(0.12, hold + 0.16)}s ease, text-shadow ${Math.max(0.12, hold + 0.16)}s ease`,
+    transform: "none",
+    textShadow: isRemotionRender
+      ? "0 0 5px rgba(0,0,0,0.86)"
+      : "0 0 24px rgba(0,0,0,0.95)",
+  };
+
+  if (!isActive) {
+    return base;
+  }
+
+  const active: React.CSSProperties = {
+    ...base,
+    color: highlightStyle === "gold" ? "#fde68a" : highlightColor,
+    opacity: 1,
+    transform: "none",
+    textShadow: isRemotionRender
+      ? highlightStyle === "gold"
+        ? "0 0 5px rgba(251,191,36,.62), 0 0 8px rgba(0,0,0,.86)"
+        : `0 0 5px ${highlightGlowColor}, 0 0 8px rgba(0,0,0,.88)`
+      : highlightStyle === "gold"
+        ? "0 0 16px rgba(251,191,36,.85), 0 0 12px rgba(0,0,0,.95)"
+        : `0 0 14px ${highlightGlowColor}, 0 0 12px rgba(0,0,0,.98)`,
+  };
+
+  if (highlightStyle === "pill") {
+    active.background = `${highlightColor}26`;
+    active.border = `1px solid ${highlightColor}66`;
+    active.boxShadow = isRemotionRender
+      ? "none"
+      : `0 0 22px ${highlightGlowColor}66`;
+  }
+
+  if (highlightStyle === "underline") {
+    active.borderBottom = `4px solid ${highlightColor}`;
+    active.borderRadius = 6;
+  }
+
+  if (highlightStyle === "gold") {
+    active.background =
+      "linear-gradient(135deg, rgba(251,191,36,.22), rgba(255,255,255,.08))";
+    active.border = "1px solid rgba(253,230,138,.42)";
+    active.boxShadow = isRemotionRender
+      ? "none"
+      : "0 0 26px rgba(251,191,36,.28)";
+  }
+
+  return active;
 }
 
 function getTextVerticalPosition(position: string) {
@@ -965,6 +1721,18 @@ function getAyahAnimation(
   if (animationStyle === "glow") return "fadeZoom 0.75s ease";
 
   return "slideSoft 0.75s ease";
+}
+
+function getAyahManualTimingKey(ayah?: Ayah) {
+  if (!ayah) return "fallback";
+
+  return ayah.numberInSurah
+    ? `ayah-${ayah.numberInSurah}`
+    : `text-${ayah.text.slice(0, 24)}`;
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function formatSurahTitle(value: string) {

@@ -4,6 +4,33 @@ import { loadQuranAyahs, searchQuranText } from "@/lib/quran-search-engine";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function isNetworkError(error: any) {
+  const message = String(error?.message || error || "").toLowerCase();
+  const code = String(error?.cause?.code || error?.code || "").toLowerCase();
+
+  return (
+    message.includes("fetch failed") ||
+    message.includes("timeout") ||
+    code.includes("timeout") ||
+    code.includes("econnreset") ||
+    code.includes("und_err_connect_timeout")
+  );
+}
+
+function emptyFallbackResponse(query = "", searchWords: string[] = []) {
+  return NextResponse.json(
+    {
+      message:
+        "تعذر الاتصال بمصدر بيانات القرآن مؤقتًا. جرّب مرة أخرى أو استخدم اختيار السورة يدويًا.",
+      query,
+      searchWords,
+      results: [],
+      temporaryError: true,
+    },
+    { status: 200 },
+  );
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -28,7 +55,7 @@ export async function POST(request: Request) {
           searchWords: search.searchWords,
           results: [],
         },
-        { status: 404 },
+        { status: 200 },
       );
     }
 
@@ -41,10 +68,15 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error("QURAN_SEARCH_ERROR:", error);
 
+    if (isNetworkError(error)) {
+      return emptyFallbackResponse();
+    }
+
     return NextResponse.json(
       {
         message: "حدث خطأ أثناء البحث في القرآن",
         error: error?.message || String(error),
+        results: [],
       },
       { status: 500 },
     );
@@ -71,7 +103,10 @@ export async function GET(request: Request) {
     const search = searchQuranText(ayahs, query, limit);
 
     return NextResponse.json({
-      message: `تم العثور على ${search.results.length} نتيجة`,
+      message:
+        search.results.length > 0
+          ? `تم العثور على ${search.results.length} نتيجة`
+          : "لم أجد آيات مطابقة. جرب كلمة أوضح أو جزء من الآية نفسها.",
       query: search.query,
       searchWords: search.searchWords,
       results: search.results,
@@ -79,10 +114,15 @@ export async function GET(request: Request) {
   } catch (error: any) {
     console.error("QURAN_SEARCH_GET_ERROR:", error);
 
+    if (isNetworkError(error)) {
+      return emptyFallbackResponse(query);
+    }
+
     return NextResponse.json(
       {
         message: "حدث خطأ أثناء البحث في القرآن",
         error: error?.message || String(error),
+        results: [],
       },
       { status: 500 },
     );

@@ -20,6 +20,13 @@ type QuranReelProps = {
   backgroundType: string;
   isRemotionRender: boolean;
 
+  exportPreset?: string;
+  exportQuality?: string;
+  exportWidth?: number;
+  exportHeight?: number;
+  exportFps?: number;
+  renderScale?: number;
+
   textPosition: string;
   animationStyle: string;
   wordSpeed: string;
@@ -61,6 +68,13 @@ const defaultProps: QuranReelProps = {
   backgroundType: "video",
   isRemotionRender: true,
 
+  exportPreset: "reels",
+  exportQuality: "high",
+  exportWidth: 1080,
+  exportHeight: 1920,
+  exportFps: 30,
+  renderScale: 1,
+
   textPosition: "center",
   animationStyle: "slide",
   wordSpeed: "normal",
@@ -97,25 +111,45 @@ function RemotionRoot() {
       calculateMetadata={({ props }) => {
         const ayahs = Array.isArray(props.ayahs) ? props.ayahs : [];
 
+        const exportFps = Math.min(
+          Math.max(Number((props as any).exportFps || FPS), 24),
+          60,
+        );
+        const exportWidth = makeEven(
+          Math.min(
+            Math.max(Number((props as any).exportWidth || 1080), 360),
+            3840,
+          ),
+        );
+        const exportHeight = makeEven(
+          Math.min(
+            Math.max(Number((props as any).exportHeight || 1920), 360),
+            3840,
+          ),
+        );
+
         const durationInFrames =
           ayahs.length > 0
             ? Math.max(
                 Math.ceil(
                   ayahs.reduce((total: number, ayah: AyahItem) => {
                     return total + (ayah.duration || 5);
-                  }, 0) * FPS,
+                  }, 0) * exportFps,
                 ),
-                150,
+                Math.ceil(5 * exportFps),
               )
-            : 300;
+            : Math.ceil(10 * exportFps);
 
         return {
           durationInFrames,
-          fps: FPS,
-          width: 1080,
-          height: 1920,
+          fps: exportFps,
+          width: exportWidth,
+          height: exportHeight,
           props: {
             ...props,
+            exportFps,
+            exportWidth,
+            exportHeight,
             isRemotionRender: true,
           },
         };
@@ -123,6 +157,10 @@ function RemotionRoot() {
       defaultProps={defaultProps}
     />
   );
+}
+
+function makeEven(value: number) {
+  return value % 2 === 0 ? value : value + 1;
 }
 
 registerRoot(RemotionRoot);
