@@ -2098,9 +2098,9 @@ function AiSuggestionCard({
         </div>
       )}
 
-      {suggestion.detectedTopics?.length > 0 && (
+      {(suggestion.detectedTopics?.length ?? 0) > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
-          {suggestion.detectedTopics.map((topic) => (
+          {(suggestion.detectedTopics || []).map((topic) => (
             <span
               key={topic}
               className="rounded-full bg-emerald-500/15 px-3 py-1 text-[10px] font-bold text-emerald-200"
