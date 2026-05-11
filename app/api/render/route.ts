@@ -297,12 +297,21 @@ export async function POST(request: Request) {
       outputLocation,
       inputProps,
 
-      crf: 25,
-      audioBitrate: "160k",
-      concurrency: 2,
+      crf: 28,
+      audioBitrate: "128k",
+
+      concurrency: 1,
+
+      chromiumOptions: {
+        disableWebSecurity: true,
+        gl: "swangle",
+      },
+
+      timeoutInMilliseconds: 120000,
 
       onProgress: ({ progress }: { progress: number }) => {
         const renderProgress = Math.round(progress * 100);
+
         const totalProgress = Math.min(
           99,
           25 + Math.round(renderProgress * 0.74),
