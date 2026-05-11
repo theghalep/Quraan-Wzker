@@ -627,7 +627,11 @@ function VideoCanvas({
             />
           ) : (
             <video
-              ref={backgroundVideoRef}
+              ref={(node) => {
+                if (backgroundVideoRef) {
+                  backgroundVideoRef.current = node;
+                }
+              }}
               key={backgroundVideoUrl}
               src={backgroundVideoUrl}
               muted
