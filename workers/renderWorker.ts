@@ -1,9 +1,25 @@
 import path from "path";
 import os from "os";
 import { mkdir, readdir, stat, unlink } from "fs/promises";
-import { Worker, type Job } from "bullmq";
+import { Worker } from "bullmq";
 import { redis } from "../lib/queue/redis";
 import { updateRenderJob } from "../lib/queue/renderJobStore";
+
+type ExportSettings = {
+  preset: string;
+  label: string;
+  quality: string;
+  qualityLabel: string;
+  width: number;
+  height: number;
+  crf: number;
+  audioBitrate: string;
+  fps: number;
+  renderScale: number;
+};
+
+let cachedBundle: string | null = null;
+let cachedBundleAt = 0;
 
 const BUNDLE_CACHE_TTL = 1000 * 60 * 30;
 const MAX_DURATION_SECONDS = 600;
@@ -11,9 +27,6 @@ const EXPORTS_MAX_AGE_MS = 1000 * 60 * 60 * 24;
 const ASSET_CHECK_TIMEOUT_MS = 10000;
 const RENDER_TIMEOUT_MS = 1000 * 60 * 15;
 const DEFAULT_RENDER_CONCURRENCY_RATIO = 0.65;
-
-let cachedBundle: string | null = null;
-let cachedBundleAt = 0;
 
 const EXPORT_PRESETS: Record<
   string,
@@ -95,48 +108,68 @@ const EXPORT_QUALITIES: Record<
   },
 };
 
-type ExportSettings = {
-  preset: string;
-  label: string;
-  quality: string;
-  qualityLabel: string;
-  width: number;
-  height: number;
-  crf: number;
-  audioBitrate: string;
-  fps: number;
-  renderScale: number;
-};
+new Worker(
+  "render-queue",
+  async (job) => {
+    const jobId = job.data?.jobId || String(job.id);
 
-type RenderQueueData = {
+    try {
+      console.log("Processing render job:", jobId);
+
+      const result = await renderQuranVideo({
+        jobId,
+        body: job.data?.body || {},
+        exportSettings: job.data?.exportSettings,
+        siteUrl: job.data?.siteUrl,
+      });
+
+      console.log("Render completed:", jobId);
+
+      return result;
+    } catch (error: any) {
+      console.error("RENDER_WORKER_ERROR:", error);
+
+      await updateRenderJob(jobId, {
+        status: "failed",
+        progress: 0,
+        message: error?.message || "حدث خطأ أثناء تصدير الفيديو",
+        error: error?.message || String(error),
+        completedAt: new Date().toISOString(),
+      });
+
+      throw error;
+    }
+  },
+  {
+    connection: redis,
+    concurrency: 1,
+  },
+);
+
+console.log("Render worker started");
+
+async function renderQuranVideo({
+  jobId,
+  body,
+  exportSettings: incomingExportSettings,
+  siteUrl: incomingSiteUrl,
+}: {
   jobId: string;
   body: any;
-  exportSettings: ExportSettings;
-  meta: {
-    origin: string;
-    firstAyah: number | string;
-    lastAyah: number | string;
-    totalDurationInSeconds: number;
-    createdAt: string;
-  };
-};
-
-async function setProgress(
-  job: Job<RenderQueueData>,
-  updates: {
-    status: string;
-    progress: number;
-    message: string;
-    [key: string]: any;
-  },
-) {
-  await job.updateProgress(updates.progress);
-  await updateRenderJob(job.data.jobId, updates);
-}
-
-async function renderQuranVideo(job: Job<RenderQueueData>) {
-  const { jobId, body, exportSettings, meta } = job.data;
+  exportSettings?: ExportSettings;
+  siteUrl?: string;
+}) {
   const ayahs = Array.isArray(body.ayahs) ? body.ayahs : [];
+  const exportSettings = incomingExportSettings || resolveExportSettings(body);
+
+  const firstAyah = ayahs[0]?.numberInSurah || "start";
+  const lastAyah = ayahs[ayahs.length - 1]?.numberInSurah || "end";
+
+  await updateRenderJob(jobId, {
+    status: "validating",
+    progress: 5,
+    message: "جاري فحص الخلفية وملفات الصوت",
+  });
 
   if (!ayahs.length) {
     throw new Error("لا توجد آيات للتصدير");
@@ -145,21 +178,6 @@ async function renderQuranVideo(job: Job<RenderQueueData>) {
   if (!body.backgroundVideoUrl) {
     throw new Error("لا توجد خلفية للتصدير");
   }
-
-  const totalDurationInSeconds = ayahs.reduce(
-    (total: number, ayah: any) => total + Number(ayah.duration || 5),
-    0,
-  );
-
-  if (totalDurationInSeconds > MAX_DURATION_SECONDS) {
-    throw new Error("مدة الفيديو طويلة جدًا. الحد الحالي 10 دقائق.");
-  }
-
-  await setProgress(job, {
-    status: "validating",
-    progress: 5,
-    message: "جاري فحص الخلفية وملفات الصوت",
-  });
 
   await assertAssetAvailable(body.backgroundVideoUrl, "الخلفية");
 
@@ -175,6 +193,15 @@ async function renderQuranVideo(job: Job<RenderQueueData>) {
       ),
     ),
   );
+
+  const totalDurationInSeconds = ayahs.reduce(
+    (total: number, ayah: any) => total + Number(ayah.duration || 5),
+    0,
+  );
+
+  if (totalDurationInSeconds > MAX_DURATION_SECONDS) {
+    throw new Error("مدة الفيديو طويلة جدًا. الحد الحالي 10 دقائق.");
+  }
 
   const durationInFrames = Math.max(
     Math.ceil(totalDurationInSeconds * exportSettings.fps),
@@ -266,7 +293,7 @@ async function renderQuranVideo(job: Job<RenderQueueData>) {
   let bundled = cachedBundle;
 
   if (shouldRebuildBundle) {
-    await setProgress(job, {
+    await updateRenderJob(jobId, {
       status: "bundling",
       progress: 12,
       message: "جاري بناء مشروع Remotion",
@@ -280,7 +307,7 @@ async function renderQuranVideo(job: Job<RenderQueueData>) {
     cachedBundle = bundled;
     cachedBundleAt = Date.now();
   } else {
-    await setProgress(job, {
+    await updateRenderJob(jobId, {
       status: "bundling",
       progress: 18,
       message: "تم استخدام نسخة Remotion المحفوظة لتسريع التصدير",
@@ -310,12 +337,13 @@ async function renderQuranVideo(job: Job<RenderQueueData>) {
   const safePreset = sanitizeFileName(exportSettings.preset || "export");
   const safeQuality = sanitizeFileName(exportSettings.quality || "quality");
 
-  const fileName = `${safeReciter}-${safeSurah}-ayah-${meta.firstAyah}-to-${meta.lastAyah}-${safePreset}-${safeQuality}-${exportSettings.width}x${exportSettings.height}-${fileId}.mp4`;
+  const fileName = `${safeReciter}-${safeSurah}-ayah-${firstAyah}-to-${lastAyah}-${safePreset}-${safeQuality}-${exportSettings.width}x${exportSettings.height}-${fileId}.mp4`;
+
   const outputLocation = path.join(exportsDir, fileName);
 
   await cleanupOldExports(exportsDir);
 
-  await setProgress(job, {
+  await updateRenderJob(jobId, {
     status: "rendering",
     progress: 25,
     message: `جاري تصدير الفيديو ${exportSettings.label} - ${exportSettings.qualityLabel} (${exportSettings.width}x${exportSettings.height})`,
@@ -362,21 +390,31 @@ async function renderQuranVideo(job: Job<RenderQueueData>) {
 
     onProgress: async ({ progress }: { progress: number }) => {
       const renderProgress = Math.round(progress * 100);
-      const totalProgress = Math.min(99, 25 + Math.round(renderProgress * 0.74));
 
-      await setProgress(job, {
+      const totalProgress = Math.min(
+        99,
+        25 + Math.round(renderProgress * 0.74),
+      );
+
+      await updateRenderJob(jobId, {
         status: "rendering",
         progress: totalProgress,
         message: `جاري التصدير ${renderProgress}%`,
       });
 
-      console.log(`RENDER_PROGRESS:${renderProgress}`);
+      console.log(`RENDER_PROGRESS:${jobId}:${renderProgress}`);
     },
   });
 
-  const url = `${meta.origin}/exports/${fileName}`;
+  const siteUrl =
+    incomingSiteUrl ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.PUBLIC_SITE_URL ||
+    "http://ec2-56-228-24-131.eu-north-1.compute.amazonaws.com";
 
-  await setProgress(job, {
+  const url = `${siteUrl.replace(/\/$/, "")}/exports/${fileName}`;
+
+  await updateRenderJob(jobId, {
     status: "completed",
     progress: 100,
     message: "تم التصدير بنجاح",
@@ -393,7 +431,9 @@ async function renderQuranVideo(job: Job<RenderQueueData>) {
   });
 
   return {
-    message: "تم التصدير بنجاح",
+    jobId,
+    status: "completed",
+    progress: 100,
     url,
     fileName,
     durationInSeconds: totalDurationInSeconds,
@@ -406,40 +446,7 @@ async function renderQuranVideo(job: Job<RenderQueueData>) {
   };
 }
 
-new Worker<RenderQueueData>(
-  "render-queue",
-  async (job) => {
-    console.log("Processing render job:", job.data.jobId);
-
-    try {
-      const result = await renderQuranVideo(job);
-      console.log("Render completed:", job.data.jobId, result.url);
-      return result;
-    } catch (error: any) {
-      console.error("RENDER_WORKER_ERROR:", error);
-
-      await updateRenderJob(job.data.jobId, {
-        status: "failed",
-        progress: 0,
-        message: error?.message || "حدث خطأ أثناء تصدير الفيديو",
-        error: error?.message || String(error),
-        completedAt: new Date().toISOString(),
-      });
-
-      throw error;
-    }
-  },
-  {
-    connection: redis,
-    concurrency: 1,
-  },
-);
-
-console.log("Render worker started");
-
 async function loadRemotionRuntime() {
-  // Keep Remotion out of Next.js webpack compilation, but load it at runtime.
-  // The required packages are included via outputFileTracingIncludes in next.config.js.
   const dynamicImport = new Function(
     "specifier",
     "return import(specifier)",
@@ -455,7 +462,7 @@ async function loadRemotionRuntime() {
   };
 }
 
-function resolveExportSettings(body: any) {
+function resolveExportSettings(body: any): ExportSettings {
   const requestedPreset = String(body.exportPreset || "reels").trim();
   const preset = EXPORT_PRESETS[requestedPreset] ? requestedPreset : "reels";
 
@@ -536,47 +543,6 @@ async function assertAssetAvailable(url: string, label: string) {
   } finally {
     clearTimeout(timeout);
   }
-}
-
-function createRenderJob(job: Omit<RenderJob, "createdAt" | "updatedAt">) {
-  const now = new Date().toISOString();
-
-  renderJobs.set(job.id, {
-    ...job,
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  trimRenderJobsHistory();
-}
-
-function updateRenderJob(
-  jobId: string,
-  updates: Partial<Omit<RenderJob, "id" | "createdAt">>,
-) {
-  const current = renderJobs.get(jobId);
-
-  if (!current) return;
-
-  renderJobs.set(jobId, {
-    ...current,
-    ...updates,
-    updatedAt: new Date().toISOString(),
-  });
-
-  trimRenderJobsHistory();
-}
-
-function trimRenderJobsHistory() {
-  const jobs = Array.from(renderJobs.values()).sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-  );
-
-  const oldJobs = jobs.slice(MAX_RENDER_JOBS_HISTORY);
-
-  oldJobs.forEach((job) => {
-    renderJobs.delete(job.id);
-  });
 }
 
 type PreprocessAyah = {
