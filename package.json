@@ -9,18 +9,24 @@
     "start": "next start"
   },
   "dependencies": {
+    "@puppeteer/browsers": "^2.13.2",
     "@remotion/bundler": "^4.0.459",
     "@remotion/lambda": "^4.0.459",
     "@remotion/player": "^4.0.459",
     "@remotion/renderer": "^4.0.459",
     "execa": "^9.6.1",
+    "extract-zip": "^2.0.1",
     "framer-motion": "^12.0.0",
+    "fs-extra": "^11.3.5",
     "lucide-react": "^0.468.0",
     "next": "14.2.35",
     "openai": "^6.37.0",
+    "p-limit": "^7.3.0",
+    "puppeteer-core": "^24.43.1",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "remotion": "^4.0.459",
+    "source-map": "^0.7.6",
     "sst": "4.13.1"
   },
   "devDependencies": {
