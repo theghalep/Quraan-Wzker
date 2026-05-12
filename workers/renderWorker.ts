@@ -926,3 +926,18 @@ async function cleanupOldExports(exportsDir: string) {
     console.log("CLEANUP_EXPORTS_ERROR:", error);
   }
 }
+async function loadRemotionRuntime() {
+  const dynamicImport = new Function(
+    "specifier",
+    "return import(specifier)",
+  ) as (specifier: string) => Promise<any>;
+
+  const bundler = await dynamicImport("@remotion/bundler");
+  const renderer = await dynamicImport("@remotion/renderer");
+
+  return {
+    bundle: bundler.bundle,
+    renderMedia: renderer.renderMedia,
+    selectComposition: renderer.selectComposition,
+  };
+}
