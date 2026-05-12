@@ -3,13 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
+    "dev": "next dev",
+    "lint": "next lint",
+    "start": "next start"
   },
   "dependencies": {
     "@remotion/bundler": "^4.0.459",
+    "@remotion/lambda": "^4.0.459",
     "@remotion/player": "^4.0.459",
     "@remotion/renderer": "^4.0.459",
     "framer-motion": "^12.0.0",
@@ -18,7 +19,8 @@
     "openai": "^6.37.0",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "remotion": "^4.0.459"
+    "remotion": "^4.0.459",
+    "sst": "4.13.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

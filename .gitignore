@@ -61,3 +61,10 @@ tmp
 .env.local
 
 .DS_Store
+
+# sst
+.sst
+
+
+# open-next
+.open-next
