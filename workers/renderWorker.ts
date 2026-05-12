@@ -137,6 +137,7 @@ new Worker(
         completedAt: new Date().toISOString(),
       });
 
+      
       throw error;
     }
   },
@@ -388,24 +389,30 @@ async function renderQuranVideo({
 
     timeoutInMilliseconds: RENDER_TIMEOUT_MS,
 
-    onProgress: async ({ progress }: { progress: number }) => {
-      const renderProgress = Math.round(progress * 100);
+onProgress: async ({ progress }: { progress: number }) => {
+  const renderProgress = Math.round(progress * 100);
 
-      const totalProgress = Math.min(
-        99,
-        25 + Math.round(renderProgress * 0.74),
-      );
+  const totalProgress = Math.min(
+    99,
+    25 + Math.round(renderProgress * 0.74),
+  );
 
-      await updateRenderJob(jobId, {
-        status: "rendering",
-        progress: totalProgress,
-        message: `جاري التصدير ${renderProgress}%`,
-      });
-
-      console.log(`RENDER_PROGRESS:${jobId}:${renderProgress}`);
-    },
+  await updateRenderJob(jobId, {
+    status: "rendering",
+    progress: totalProgress,
+    message: `جاري التصدير ${renderProgress}%`,
   });
 
+  console.log(
+    JSON.stringify({
+      type: "render-progress",
+      jobId,
+      progress: totalProgress,
+    }),
+  );
+
+  console.log(`RENDER_PROGRESS:${jobId}:${renderProgress}`);
+},
 
 const siteUrl =
   incomingSiteUrl ||
