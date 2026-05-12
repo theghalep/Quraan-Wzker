@@ -4,7 +4,18 @@ import { renderQueue } from "@/lib/queue/renderQueue";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
+type ExportSettings = {
+  preset: string;
+  label: string;
+  quality: string;
+  qualityLabel: string;
+  width: number;
+  height: number;
+  crf: number;
+  audioBitrate: string;
+  fps: number;
+  renderScale: number;
+};
 const MAX_DURATION_SECONDS = 600;
 const MAX_RENDER_JOBS_HISTORY = 25;
 
@@ -160,10 +171,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const totalDurationInSeconds = ayahs.reduce(
-      (total, ayah) => total + Number(ayah.duration || 5),
-      0,
-    );
+const totalDurationInSeconds = ayahs.reduce(
+  (total: number, ayah: any) => total + Number(ayah.duration || 5),
+  0,
+);
 
     if (totalDurationInSeconds > MAX_DURATION_SECONDS) {
       return NextResponse.json(
@@ -230,53 +241,46 @@ export async function POST(request: Request) {
   }
 }
 
-function resolveExportSettings(body: any) {
-  const preset =
-    EXPORT_PRESETS[String(body.exportPreset || "reels")]
-      ? String(body.exportPreset)
-      : "reels";
+function resolveExportSettings(body: any): ExportSettings {
+  const requestedPreset = String(body.exportPreset || "reels").trim();
+  const preset = Object.prototype.hasOwnProperty.call(
+    EXPORT_PRESETS,
+    requestedPreset,
+  )
+    ? requestedPreset
+    : "reels";
 
-  const quality =
-    EXPORT_QUALITIES[String(body.exportQuality || "high")]
-      ? String(body.exportQuality)
-      : "high";
+  const requestedQuality = String(body.exportQuality || "high").trim();
+  const quality = Object.prototype.hasOwnProperty.call(
+    EXPORT_QUALITIES,
+    requestedQuality,
+  )
+    ? requestedQuality
+    : "high";
 
-  const presetSettings = EXPORT_PRESETS[preset];
-  const qualitySettings = EXPORT_QUALITIES[quality];
+  const presetSettings =
+    EXPORT_PRESETS[preset as keyof typeof EXPORT_PRESETS];
+
+  const qualitySettings =
+    EXPORT_QUALITIES[quality as keyof typeof EXPORT_QUALITIES];
 
   return {
     preset,
     label: presetSettings.label,
-
     quality,
     qualityLabel: qualitySettings.label,
 
     width: makeEven(
-      clampNumber(
-        Number(body.exportWidth || presetSettings.width),
-        360,
-        3840,
-      ),
+      clampNumber(Number(body.exportWidth || presetSettings.width), 360, 3840),
     ),
 
     height: makeEven(
-      clampNumber(
-        Number(body.exportHeight || presetSettings.height),
-        360,
-        3840,
-      ),
+      clampNumber(Number(body.exportHeight || presetSettings.height), 360, 3840),
     ),
 
     crf: qualitySettings.crf,
-
     audioBitrate: qualitySettings.audioBitrate,
-
-    fps: clampNumber(
-      Number(body.exportFps || qualitySettings.fps),
-      24,
-      60,
-    ),
-
+    fps: clampNumber(Number(body.exportFps || qualitySettings.fps), 24, 60),
     renderScale: qualitySettings.renderScale,
   };
 }

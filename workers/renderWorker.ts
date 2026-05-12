@@ -114,18 +114,18 @@ async function renderQuranVideo({
 
   await assertAssetAvailable(body.backgroundVideoUrl, "الخلفية");
 
-  const audioAssets = ayahs
+  const audioAssets: Array<{ url: string; label: string }> = ayahs
     .map((ayah: any, index: number) => ({
-      url: ayah.audio,
+      url: String(ayah.audio || ""),
       label: `صوت الآية رقم ${ayah.numberInSurah || index + 1}`,
     }))
-    .filter((asset: { url?: string }) => Boolean(asset.url));
+    .filter((asset: { url: string }) => Boolean(asset.url));
 
-  await mapWithConcurrency(
+  await mapWithConcurrency<{ url: string; label: string }>(
     audioAssets,
     getAssetCheckConcurrency(),
     async (asset) => {
-      await assertAssetAvailable(asset.url as string, asset.label);
+      await assertAssetAvailable(asset.url, asset.label);
     },
   );
 
