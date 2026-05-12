@@ -7,6 +7,7 @@ import {
   OffthreadVideo,
   Sequence,
   useCurrentFrame,
+  staticFile,
   useVideoConfig,
 } from "remotion";
 
@@ -32,6 +33,8 @@ type Ayah = {
   audio?: string;
   duration?: number;
   numberInSurah?: number;
+  audioStartFromSeconds?: number;
+  __isBismillahIntro?: boolean;
   __prepared?: PreparedAyahRenderData;
 };
 
@@ -70,6 +73,10 @@ type Props = {
   wordHighlightHold?: number;
   wordHighlightMode?: string;
   manualWordTimings?: Record<string, Array<number | null>>;
+
+  showBismillahIntro?: boolean;
+  bismillahAudioUrl?: string;
+  bismillahDuration?: number;
 
   showSurahName?: boolean;
   surahName?: string;
@@ -110,14 +117,16 @@ type TimelineItem = {
   endSeconds: number;
 };
 
+const DEFAULT_FPS = 30;
+const BISMILLAH_TEXT = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ";
+const DEFAULT_BISMILLAH_AUDIO = staticFile("audio/bismillah.mp3");
+
 const FALLBACK_AYAH: Ayah = {
-  text: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+  text: BISMILLAH_TEXT,
   audio: "",
   duration: 5,
   numberInSurah: 1,
 };
-
-const DEFAULT_FPS = 30;
 
 export default function Video(props: Props) {
   if (props.isRemotionRender) {
@@ -310,11 +319,12 @@ function BrowserPreviewVideo(props: Props) {
     const audio = audioRef.current;
     if (!audio) return;
 
-    const shouldHardSeek = Math.abs(audio.currentTime - ayahLocalTime) > 0.18;
+    const targetAudioTime = ayahLocalTime;
+    const shouldHardSeek = Math.abs(audio.currentTime - targetAudioTime) > 0.18;
 
     if (shouldHardSeek) {
       try {
-        audio.currentTime = ayahLocalTime;
+        audio.currentTime = targetAudioTime;
       } catch {
         // ignore browser seek race conditions while metadata is loading
       }
@@ -374,7 +384,7 @@ function useNormalizedProps({
   ayahs = [],
   textColor = "#ffffff",
   textSize = 72,
-  fontFamily = "Amiri",
+  fontFamily = "KFGQPC Uthmanic Script HAFS",
   backgroundVideoUrl = "",
   backgroundType = "video",
   exportPreset = "reels",
@@ -389,10 +399,10 @@ function useNormalizedProps({
   wordSpeed = "normal",
 
   showWordHighlight = true,
-  wordHighlightColor = "#34d399",
-  wordHighlightGlowColor = "#34d399",
-  wordDimColor = "rgba(255,255,255,0.62)",
-  wordHighlightStyle = "glow",
+  wordHighlightColor = "#facc15",
+  wordHighlightGlowColor = "#facc15",
+  wordDimColor = "rgba(255,255,255,0.66)",
+  wordHighlightStyle = "gold",
   wordHighlightTransition = "scale",
   wordHighlightSpeed = 1,
   wordHighlightOffset = 0,
@@ -400,9 +410,13 @@ function useNormalizedProps({
   wordHighlightMode = "smart",
   manualWordTimings = {},
 
+  showBismillahIntro = true,
+  bismillahAudioUrl = DEFAULT_BISMILLAH_AUDIO,
+  bismillahDuration = 3.2,
+
   showProgressBar = true,
   showCountdownTimer = true,
-  progressColor = "#34d399",
+  progressColor = "#facc15",
   timerColor = "#ffffff",
   progressPosition = "bottom",
   timerPosition = "bottom",
@@ -417,7 +431,7 @@ function useNormalizedProps({
 
   showReciterName = true,
   reciter = "مشاري العفاسي",
-  reciterNameColor = "#34d399",
+  reciterNameColor = "#facc15",
   reciterNameSize = 28,
   reciterNamePosition = "bottom",
 
@@ -428,10 +442,16 @@ function useNormalizedProps({
   brandNamePosition = "bottom",
   brandNameStyle = "glass",
 }: Props) {
-  const safeAyahs = useMemo(
-    () => (ayahs.length > 0 ? ayahs : [FALLBACK_AYAH]),
-    [ayahs],
-  );
+  const safeAyahs = useMemo(() => {
+    const inputAyahs = ayahs.length > 0 ? ayahs : [FALLBACK_AYAH];
+
+    return normalizeAyahsWithBismillahIntro({
+      ayahs: inputAyahs,
+      showBismillahIntro,
+      bismillahAudioUrl,
+      bismillahDuration,
+    });
+  }, [ayahs, showBismillahIntro, bismillahAudioUrl, bismillahDuration]);
 
   const ayahsKey = useMemo(() => {
     return safeAyahs
@@ -472,6 +492,10 @@ function useNormalizedProps({
     wordHighlightHold,
     wordHighlightMode,
     manualWordTimings,
+
+    showBismillahIntro,
+    bismillahAudioUrl,
+    bismillahDuration,
 
     showProgressBar,
     showCountdownTimer,
@@ -754,7 +778,7 @@ function VideoCanvas({
               position: "absolute",
               inset: 0,
               background:
-                "radial-gradient(circle at top, rgba(52,211,153,0.22), transparent 35%), linear-gradient(to bottom, #021b13, #000000, #04281e)",
+                "radial-gradient(circle at top, rgba(250,204,21,0.18), transparent 34%), radial-gradient(circle at bottom, rgba(6,95,70,0.20), transparent 38%), linear-gradient(to bottom, #03140f, #000000, #041f18)",
             }}
           />
         )}
@@ -847,7 +871,7 @@ function VideoCanvas({
         )}
 
         <div
-          key={currentAyah?.numberInSurah || currentAyah?.text}
+          key={`${currentAyah?.__isBismillahIntro ? "bismillah" : currentAyah?.numberInSurah || "ayah"}-${currentAyah?.text}`}
           style={{
             position: "absolute",
             inset: 0,
@@ -869,19 +893,25 @@ function VideoCanvas({
               textShadow: isRemotionRender
                 ? "0 0 10px rgba(0,0,0,0.9)"
                 : "0 0 12px rgba(0,0,0,0.98)",
-              background: "transparent",
-              borderRadius: 0,
-              padding: `${captionLayout.paddingY}px ${captionLayout.paddingX}px`,
-              border: "none",
-              boxShadow: "none",
-              width: "100%",
-              maxWidth: "100%",
-              overflow: "hidden",
+              background: isRemotionRender
+                ? "rgba(0,0,0,0.30)"
+                : "rgba(0,0,0,0.36)",
+              borderRadius: 38,
+              padding: `${captionLayout.paddingY + 22}px ${captionLayout.paddingX + 28}px`,
+              border: "1px solid rgba(255,255,255,0.10)",
+              boxShadow: isRemotionRender
+                ? "0 14px 34px rgba(0,0,0,0.30)"
+                : "0 18px 55px rgba(0,0,0,0.42)",
+              width: isLandscapeExport ? "88%" : isSquareExport ? "86%" : "82%",
+              maxWidth: captionLayout.maxWidth,
+              minWidth: isLandscapeExport ? "56%" : "60%",
+              overflow: "visible",
+              backdropFilter: isRemotionRender ? "none" : "blur(10px)",
             }}
           >
             <AnimatedText
               text={
-                currentAyah?.text || "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ"
+                currentAyah?.text || BISMILLAH_TEXT
               }
               color={textColor}
               size={adaptiveTextSize}
@@ -903,7 +933,7 @@ function VideoCanvas({
                 manualWordTimings[getAyahManualTimingKey(currentAyah)] || []
               }
               preparedData={currentAyah?.__prepared}
-              ayahNumber={currentAyah?.numberInSurah}
+              ayahNumber={currentAyah?.__isBismillahIntro ? undefined : currentAyah?.numberInSurah}
               isLandscapeCaption={Boolean((captionLayout as any).isLandscape)}
               isSquareCaption={Boolean((captionLayout as any).isSquare)}
               isRemotionRender={isRemotionRender}
@@ -1063,24 +1093,24 @@ function getOpticalCaptionLayout({
   const userScale = clampNumber(requestedTextSize / 72, 0.72, 1.08);
 
   // Vertical captions must stay elegant and horizontal, not huge stacked words.
-  const baseFont = isLandscape ? 68 : isSquare ? 52 : 42;
+  const baseFont = isLandscape ? 70 : isSquare ? 58 : 50;
 
   const fontSize = clampNumber(
     baseFont * opticalScale * userScale,
-    isLandscape ? 38 : isSquare ? 28 : 24,
-    isLandscape ? 68 : isSquare ? 44 : 32,
+    isLandscape ? 38 : isSquare ? 32 : 34,
+    isLandscape ? 70 : isSquare ? 52 : 46,
   );
 
   return {
     fontSize,
-    maxWidth: isLandscape ? "96%" : isSquare ? "92%" : "94%",
-    lineHeight: isLandscape ? 1.52 : 1.82,
+    maxWidth: isLandscape ? "94%" : isSquare ? "90%" : "88%",
+    lineHeight: isLandscape ? 1.62 : isSquare ? 1.72 : 1.86,
     sidePadding: isLandscape
       ? Math.round(safeWidth * 0.035)
       : Math.round(safeWidth * 0.055),
-    paddingX: isLandscape ? 4 : 6,
-    paddingY: isLandscape ? 2 : 3,
-    borderRadius: 0,
+    paddingX: isLandscape ? 22 : isSquare ? 24 : 28,
+    paddingY: isLandscape ? 12 : isSquare ? 16 : 18,
+    borderRadius: isLandscape ? 28 : 34,
     isLandscape,
     isSquare,
   };
@@ -1135,7 +1165,7 @@ function AnimatedText({
   isSquareCaption?: boolean;
   isRemotionRender?: boolean;
 }) {
-  const safeSize = Math.min(Math.max(size, 22), 56);
+  const safeSize = Math.min(Math.max(size, 24), isLandscapeCaption ? 64 : isSquareCaption ? 52 : 46);
   const hasManualTimings = manualTimings.some(
     (time) => typeof time === "number" && Number.isFinite(time),
   );
@@ -1234,18 +1264,24 @@ function AnimatedText({
   const baseStyle: React.CSSProperties = {
     color,
     fontSize: safeSize,
-    fontWeight: 900,
-    lineHeight: 1.58,
+    fontWeight: 800,
+    lineHeight: isLandscapeCaption ? 1.9 : isSquareCaption ? 2.02 : 2.15,
     textShadow: isRemotionRender
-      ? "0 1px 3px rgba(0,0,0,0.92), 0 0 5px rgba(0,0,0,0.52)"
-      : "0 2px 6px rgba(0,0,0,0.98), 0 0 16px rgba(0,0,0,0.68)",
+      ? "0 2px 5px rgba(0,0,0,0.95)"
+      : "0 3px 12px rgba(0,0,0,0.98), 0 0 18px rgba(0,0,0,0.7)",
     direction: "rtl",
-    unicodeBidi: "isolate",
-    fontFamily: `"${fontFamily}", "Amiri", "Noto Naskh Arabic", serif`,
+    unicodeBidi: "plaintext",
+    fontFamily: `"${fontFamily}", "KFGQPC Uthmanic Script HAFS", "Amiri Quran", "Noto Naskh Arabic", "Amiri", serif`,
+    fontKerning: "normal",
+    fontVariantLigatures: "common-ligatures",
+    fontFeatureSettings: '"liga" 1, "calt" 1, "kern" 1',
+    textRendering: "geometricPrecision",
+    WebkitFontSmoothing: "antialiased",
+    MozOsxFontSmoothing: "grayscale",
     textAlign: "center",
     whiteSpace: "normal",
     wordBreak: "normal",
-    wordSpacing: "0.04em",
+    wordSpacing: isLandscapeCaption ? "0.10em" : "0.12em",
     overflowWrap: "normal",
     maxWidth: "100%",
     letterSpacing: "0",
@@ -1266,9 +1302,10 @@ function AnimatedText({
           key={`caption-page-line-${lineIndex}`}
           style={{
             display: "block",
-            whiteSpace: "nowrap",
+            whiteSpace: "normal",
             maxWidth: "100%",
             overflow: "visible",
+            marginBlock: isLandscapeCaption ? "0.02em" : "0.04em",
           }}
         >
           {line.map((item, visibleIndex) => {
@@ -1340,12 +1377,12 @@ function buildPagedCaptionLines({
 }) {
   if (!words.length) return [];
 
-  const maxWordsPerPage = isLandscape ? 20 : isSquare ? 13 : 10;
+  const maxWordsPerPage = isLandscape ? 14 : isSquare ? 7 : 5;
   const targetCharsPerPage = isLandscape
-    ? clampNumber(Math.round(fontSize * 3.2), 110, 190)
+    ? clampNumber(Math.round(fontSize * 2.4), 72, 130)
     : isSquare
-      ? clampNumber(Math.round(fontSize * 2.5), 72, 120)
-      : clampNumber(Math.round(fontSize * 2.35), 56, 92);
+      ? clampNumber(Math.round(fontSize * 1.7), 42, 74)
+      : clampNumber(Math.round(fontSize * 1.28), 26, 48);
 
   const pages: Array<{
     lines: Array<Array<{ word: string; originalIndex: number }>>;
@@ -1358,7 +1395,7 @@ function buildPagedCaptionLines({
     const nextLength = pageLength + word.length + (pageItems.length ? 1 : 0);
 
     const shouldStartNewPage =
-      pageItems.length >= 5 &&
+      pageItems.length >= 3 &&
       (nextLength > targetCharsPerPage || pageItems.length >= maxWordsPerPage);
 
     if (shouldStartNewPage) {
@@ -1386,14 +1423,14 @@ function buildPagedCaptionLines({
 function splitCaptionPageIntoLines(
   items: Array<{ word: string; originalIndex: number }>,
 ) {
-  if (items.length <= 4) {
+  if (items.length <= 3) {
     return [items];
   }
 
   let bestSplit = Math.ceil(items.length / 2);
   let bestScore = Number.POSITIVE_INFINITY;
 
-  for (let split = 2; split <= items.length - 2; split += 1) {
+  for (let split = 2; split <= items.length - 1; split += 1) {
     const firstText = items
       .slice(0, split)
       .map((item) => item.word)
@@ -1408,7 +1445,7 @@ function splitCaptionPageIntoLines(
     const secondLength = secondText.length;
 
     const balancePenalty = Math.abs(firstLength - secondLength);
-    const orphanPenalty = items.length - split <= 2 || split <= 2 ? 100 : 0;
+    const orphanPenalty = items.length - split <= 1 || split <= 1 ? 100 : 0;
 
     const score = balancePenalty + orphanPenalty;
 
@@ -1419,6 +1456,141 @@ function splitCaptionPageIntoLines(
   }
 
   return [items.slice(0, bestSplit), items.slice(bestSplit)];
+}
+
+function normalizeAyahsWithBismillahIntro({
+  ayahs,
+  showBismillahIntro,
+  bismillahAudioUrl,
+  bismillahDuration,
+}: {
+  ayahs: Ayah[];
+  showBismillahIntro: boolean;
+  bismillahAudioUrl: string;
+  bismillahDuration: number;
+}): Ayah[] {
+  const inputAyahs = ayahs.length > 0 ? ayahs : [FALLBACK_AYAH];
+
+  if (!showBismillahIntro) {
+    return inputAyahs;
+  }
+
+  const intro = createBismillahIntro({ bismillahAudioUrl, bismillahDuration });
+  const introDuration = Math.max(Number(bismillahDuration || 3.2), 1.8);
+  const cleanedAyahs: Ayah[] = [];
+  let removedLeadingBismillah = false;
+
+  for (let index = 0; index < inputAyahs.length; index += 1) {
+    const ayah = inputAyahs[index];
+    const text = ayah?.text || "";
+
+    if (!text.trim()) {
+      continue;
+    }
+
+    // Only the fixed intro is allowed to show the basmalah.
+    // If the API/source sends basmalah as its own first ayah, drop it.
+    if (!removedLeadingBismillah && isBismillahOnly(text)) {
+      removedLeadingBismillah = true;
+      continue;
+    }
+
+    // If the first recited ayah starts with basmalah, remove it from the visible text.
+    // This handles diacritics, Quran stop marks, Arabic presentation forms and the ﷽ ligature.
+    if (!removedLeadingBismillah && startsWithBismillah(text)) {
+      const remainder = removeLeadingBismillahText(text).trim();
+      removedLeadingBismillah = true;
+
+      if (!remainder) {
+        continue;
+      }
+
+      cleanedAyahs.push({
+        ...ayah,
+        text: remainder,
+      });
+
+      continue;
+    }
+
+    cleanedAyahs.push(ayah);
+  }
+
+  return [intro, ...(cleanedAyahs.length > 0 ? cleanedAyahs : [])];
+}
+
+function createBismillahIntro({
+  bismillahAudioUrl,
+  bismillahDuration,
+}: {
+  bismillahAudioUrl: string;
+  bismillahDuration: number;
+}): Ayah {
+  return {
+    text: BISMILLAH_TEXT,
+    audio: bismillahAudioUrl || "",
+    duration: Math.max(Number(bismillahDuration || 3.2), 1.8),
+    numberInSurah: undefined,
+    __isBismillahIntro: true,
+  };
+}
+
+function isBismillahOnly(text: string) {
+  return normalizeArabicForBismillah(text) === normalizeArabicForBismillah(BISMILLAH_TEXT);
+}
+
+function startsWithBismillah(text: string) {
+  const normalizedText = normalizeArabicForBismillah(text);
+  const normalizedBismillah = normalizeArabicForBismillah(BISMILLAH_TEXT);
+
+  return normalizedText.startsWith(normalizedBismillah);
+}
+
+function removeLeadingBismillahText(text: string) {
+  const trimmed = text.trimStart();
+
+  if (trimmed.startsWith("﷽")) {
+    return trimmed.slice("﷽".length).trimStart();
+  }
+
+  const words = trimmed.split(/(\s+)/u);
+  let normalizedCursor = "";
+  let lastTokenToRemove = -1;
+  const normalizedBismillah = normalizeArabicForBismillah(BISMILLAH_TEXT);
+
+  for (let index = 0; index < words.length; index += 1) {
+    const token = words[index];
+    const normalizedToken = normalizeArabicForBismillah(token);
+
+    if (!normalizedToken) {
+      continue;
+    }
+
+    normalizedCursor += normalizedToken;
+    lastTokenToRemove = index;
+
+    if (normalizedCursor === normalizedBismillah) {
+      return words.slice(lastTokenToRemove + 1).join("").trimStart();
+    }
+
+    if (!normalizedBismillah.startsWith(normalizedCursor)) {
+      return trimmed;
+    }
+  }
+
+  return trimmed;
+}
+
+function normalizeArabicForBismillah(value: string) {
+  return value
+    .replace(/﷽/g, "بسم الله الرحمن الرحيم")
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, "")
+    .replace(/[\u06D6-\u06ED۝۞]/g, "")
+    .replace(/[إأآٱا]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه")
+    .replace(/[^\u0600-\u06FF]/g, "")
+    .trim();
 }
 
 function toArabicNumbers(value: number | string) {
@@ -1638,25 +1810,20 @@ function getHighlightedWordStyle({
   hold: number;
   isRemotionRender?: boolean;
 }) {
-  const activeTransform = "none";
-
   const base: React.CSSProperties = {
-    display: "inline-block",
-    margin: "0 3px",
-    padding:
-      highlightStyle === "pill" || highlightStyle === "gold"
-        ? "0 9px"
-        : "0 2px",
-    borderRadius: 999,
-    color: isPrevious ? color : "rgba(255,255,255,0.9)",
+    display: "inline",
+    margin: "0 0.08em",
+    padding: "0 0.06em",
+    borderRadius: 14,
+    color: isPrevious ? color : dimColor,
     opacity: 1,
     transition: isRemotionRender
       ? "none"
       : `color ${Math.max(0.12, hold + 0.16)}s ease, text-shadow ${Math.max(0.12, hold + 0.16)}s ease`,
     transform: "none",
     textShadow: isRemotionRender
-      ? "0 0 5px rgba(0,0,0,0.86)"
-      : "0 0 24px rgba(0,0,0,0.95)",
+      ? "0 2px 5px rgba(0,0,0,0.92)"
+      : "0 3px 14px rgba(0,0,0,0.98)",
   };
 
   if (!isActive) {
@@ -1691,12 +1858,9 @@ function getHighlightedWordStyle({
   }
 
   if (highlightStyle === "gold") {
-    active.background =
-      "linear-gradient(135deg, rgba(251,191,36,.22), rgba(255,255,255,.08))";
-    active.border = "1px solid rgba(253,230,138,.42)";
-    active.boxShadow = isRemotionRender
-      ? "none"
-      : "0 0 26px rgba(251,191,36,.28)";
+    active.background = "transparent";
+    active.border = "none";
+    active.boxShadow = "none";
   }
 
   return active;

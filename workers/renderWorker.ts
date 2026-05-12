@@ -20,13 +20,21 @@ type ExportSettings = {
 
 let cachedBundle: string | null = null;
 let cachedBundleAt = 0;
+let cachedRuntimePromise: Promise<{
+  bundle: any;
+  renderMedia: any;
+  selectComposition: any;
+}> | null = null;
 
-const BUNDLE_CACHE_TTL = 1000 * 60 * 30;
+const BUNDLE_CACHE_TTL = 1000 * 60 * 60 * 2;
 const MAX_DURATION_SECONDS = 600;
 const EXPORTS_MAX_AGE_MS = 1000 * 60 * 60 * 24;
-const ASSET_CHECK_TIMEOUT_MS = 10000;
-const RENDER_TIMEOUT_MS = 1000 * 60 * 15;
-const DEFAULT_RENDER_CONCURRENCY_RATIO = 0.65;
+const ASSET_CHECK_TIMEOUT_MS = 8000;
+const RENDER_TIMEOUT_MS = 1000 * 60 * 20;
+const DEFAULT_RENDER_CONCURRENCY_RATIO = 0.5;
+const MAX_RENDER_CONCURRENCY = Number(process.env.REMOTION_MAX_RENDER_CONCURRENCY || 4);
+const ASSET_CHECK_CONCURRENCY = Number(process.env.RENDER_ASSET_CHECK_CONCURRENCY || 4);
+const PROGRESS_UPDATE_INTERVAL_MS = 1200;
 
 new Worker(
   "render-queue",
@@ -106,17 +114,19 @@ async function renderQuranVideo({
 
   await assertAssetAvailable(body.backgroundVideoUrl, "الخلفية");
 
-  const audioUrls = ayahs
-    .map((ayah: any) => ayah.audio)
-    .filter((url: string | undefined) => Boolean(url));
+  const audioAssets = ayahs
+    .map((ayah: any, index: number) => ({
+      url: ayah.audio,
+      label: `صوت الآية رقم ${ayah.numberInSurah || index + 1}`,
+    }))
+    .filter((asset: { url?: string }) => Boolean(asset.url));
 
-  await Promise.all(
-    audioUrls.map((url: string, index: number) =>
-      assertAssetAvailable(
-        url,
-        `صوت الآية رقم ${ayahs[index]?.numberInSurah || index + 1}`,
-      ),
-    ),
+  await mapWithConcurrency(
+    audioAssets,
+    getAssetCheckConcurrency(),
+    async (asset) => {
+      await assertAssetAvailable(asset.url as string, asset.label);
+    },
   );
 
   const totalDurationInSeconds = ayahs.reduce(
@@ -286,6 +296,8 @@ async function renderQuranVideo({
   });
 
   const renderConcurrency = getRenderConcurrency();
+  let lastProgressUpdateAt = 0;
+  let lastReportedProgress = 24;
 
   await renderMedia({
     composition: finalComposition,
@@ -298,8 +310,8 @@ async function renderQuranVideo({
 
     inputProps,
 
-    crf: exportSettings.crf,
-    audioBitrate: exportSettings.audioBitrate,
+    crf: getRenderCrf(exportSettings.quality, exportSettings.crf),
+    audioBitrate: getAudioBitrate(exportSettings.audioBitrate),
 
     concurrency: renderConcurrency,
 
@@ -307,6 +319,7 @@ async function renderQuranVideo({
     jpegQuality: getJpegQuality(exportSettings.quality),
 
     x264Preset: getX264Preset(exportSettings.quality),
+    pixelFormat: "yuv420p",
 
     chromiumOptions: {
       disableWebSecurity: true,
@@ -318,11 +331,24 @@ async function renderQuranVideo({
 
     onProgress: async ({ progress }: { progress: number }) => {
       const renderProgress = Math.round(progress * 100);
-
       const totalProgress = Math.min(
         99,
         25 + Math.round(renderProgress * 0.74),
       );
+
+      const now = Date.now();
+      const progressDelta = Math.abs(totalProgress - lastReportedProgress);
+      const shouldUpdate =
+        totalProgress >= 99 ||
+        progressDelta >= 2 ||
+        now - lastProgressUpdateAt >= PROGRESS_UPDATE_INTERVAL_MS;
+
+      if (!shouldUpdate) {
+        return;
+      }
+
+      lastProgressUpdateAt = now;
+      lastReportedProgress = totalProgress;
 
       await updateRenderJob(jobId, {
         status: "rendering",
@@ -335,10 +361,10 @@ async function renderQuranVideo({
           type: "render-progress",
           jobId,
           progress: totalProgress,
+          renderProgress,
+          renderConcurrency,
         }),
       );
-
-      console.log(`RENDER_PROGRESS:${jobId}:${renderProgress}`);
     },
   });
 
@@ -383,22 +409,71 @@ async function renderQuranVideo({
 }
 
 async function loadRemotionRuntime() {
-  const dynamicImport = new Function(
-    "specifier",
-    "return import(specifier)",
-  ) as (specifier: string) => Promise<any>;
+  if (!cachedRuntimePromise) {
+    cachedRuntimePromise = (async () => {
+      const dynamicImport = new Function(
+        "specifier",
+        "return import(specifier)",
+      ) as (specifier: string) => Promise<any>;
 
-  const bundler = await dynamicImport("@remotion/bundler");
-  const renderer = await dynamicImport("@remotion/renderer");
+      const [bundler, renderer] = await Promise.all([
+        dynamicImport("@remotion/bundler"),
+        dynamicImport("@remotion/renderer"),
+      ]);
 
-  return {
-    bundle: bundler.bundle,
-    renderMedia: renderer.renderMedia,
-    selectComposition: renderer.selectComposition,
-  };
+      return {
+        bundle: bundler.bundle,
+        renderMedia: renderer.renderMedia,
+        selectComposition: renderer.selectComposition,
+      };
+    })();
+  }
+
+  return cachedRuntimePromise;
+}
+
+
+async function mapWithConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<void>,
+) {
+  const safeConcurrency = Math.max(1, Math.min(concurrency, items.length || 1));
+  let cursor = 0;
+
+  async function runNext() {
+    while (cursor < items.length) {
+      const currentIndex = cursor;
+      cursor += 1;
+      await mapper(items[currentIndex], currentIndex);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: safeConcurrency }, () => runNext()),
+  );
+}
+
+function getAssetCheckConcurrency() {
+  if (
+    Number.isFinite(ASSET_CHECK_CONCURRENCY) &&
+    ASSET_CHECK_CONCURRENCY > 0
+  ) {
+    return Math.max(1, Math.floor(ASSET_CHECK_CONCURRENCY));
+  }
+
+  return 4;
 }
 
 async function assertAssetAvailable(url: string, label: string) {
+  if (!url || typeof url !== "string") {
+    throw new Error(`${label} غير متاح حاليًا`);
+  }
+
+  if (url.startsWith("/") || url.startsWith("file:")) {
+    return;
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), ASSET_CHECK_TIMEOUT_MS);
 
@@ -688,20 +763,56 @@ function getRenderConcurrency() {
     return Math.max(1, Math.floor(envConcurrency));
   }
 
-  const isRailway = Boolean(process.env.RAILWAY_ENVIRONMENT);
+  const isLowMemoryHost =
+    Boolean(process.env.RAILWAY_ENVIRONMENT) ||
+    Number(process.env.RENDER_SAFE_MODE || 0) === 1;
 
-  if (isRailway) {
+  if (isLowMemoryHost) {
     return 1;
   }
 
   const cpuCount = Math.max(os.cpus()?.length || 2, 2);
+  const freeMemoryGb = os.freemem() / 1024 / 1024 / 1024;
+  const memorySafeConcurrency = Math.max(1, Math.floor(freeMemoryGb / 1.25));
+
   const envRatio = Number(process.env.REMOTION_CONCURRENCY_RATIO);
   const ratio =
     Number.isFinite(envRatio) && envRatio > 0 && envRatio <= 1
       ? envRatio
       : DEFAULT_RENDER_CONCURRENCY_RATIO;
 
-  return clampNumber(Math.floor(cpuCount * ratio), 2, cpuCount);
+  const cpuSafeConcurrency = Math.max(1, Math.floor(cpuCount * ratio));
+  const maxConcurrency =
+    Number.isFinite(MAX_RENDER_CONCURRENCY) && MAX_RENDER_CONCURRENCY > 0
+      ? Math.floor(MAX_RENDER_CONCURRENCY)
+      : 4;
+
+  return clampNumber(
+    Math.min(cpuSafeConcurrency, memorySafeConcurrency, maxConcurrency),
+    1,
+    cpuCount,
+  );
+}
+
+
+function getRenderCrf(quality: string, incomingCrf: number) {
+  if (Number.isFinite(incomingCrf)) {
+    return clampNumber(Math.round(incomingCrf), 18, 30);
+  }
+
+  if (quality === "draft") return 28;
+  if (quality === "standard") return 24;
+  if (quality === "ultra") return 20;
+
+  return 22;
+}
+
+function getAudioBitrate(incomingAudioBitrate?: string) {
+  if (incomingAudioBitrate && /^\d+k$/.test(incomingAudioBitrate)) {
+    return incomingAudioBitrate;
+  }
+
+  return "128k";
 }
 
 function getJpegQuality(quality: string) {
@@ -739,6 +850,7 @@ function sanitizeFileName(value: string) {
 }
 
 function clampNumber(value: number, min: number, max: number) {
+  if (!Number.isFinite(value)) return min;
   return Math.min(Math.max(value, min), max);
 }
 
