@@ -15,6 +15,7 @@
     "@remotion/player": "^4.0.459",
     "@remotion/renderer": "^4.0.459",
     "buffer-crc32": "^1.0.0",
+    "bullmq": "^5.76.8",
     "cross-spawn": "^7.0.6",
     "debug": "^4.4.3",
     "execa": "^9.6.1",
@@ -24,6 +25,7 @@
     "fs-extra": "^11.3.5",
     "get-stream": "^9.0.1",
     "human-signals": "^8.0.1",
+    "ioredis": "^5.10.1",
     "is-stream": "^4.0.1",
     "isexe": "^4.0.0",
     "lucide-react": "^0.468.0",
@@ -58,6 +60,7 @@
     "eslint": "^8.57.1",
     "eslint-config-next": "14.2.35",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }
