@@ -1,9 +1,22 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { renderQueue } from "@/lib/queue/renderQueue";
+import {
+  getRenderJob,
+  updateRenderJob,
+} from "@/lib/queue/renderJobStore";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+type RenderJobStatus =
+  | "queued"
+  | "validating"
+  | "bundling"
+  | "rendering"
+  | "completed"
+  | "failed";
+
 type ExportSettings = {
   preset: string;
   label: string;
@@ -16,10 +29,29 @@ type ExportSettings = {
   fps: number;
   renderScale: number;
 };
+
+type RenderJobResponse = {
+  id: string;
+  status: RenderJobStatus;
+  progress: number;
+  message: string;
+  url?: string;
+  fileName?: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+  error?: string;
+  exportPreset?: string;
+  exportQuality?: string;
+  exportWidth?: number;
+  exportHeight?: number;
+  exportFps?: number;
+  durationInSeconds?: number;
+  durationInFrames?: number;
+};
+
 const MAX_DURATION_SECONDS = 600;
 const MAX_RENDER_JOBS_HISTORY = 25;
-
-const renderJobs = new Map();
 
 const EXPORT_PRESETS = {
   reels: {
@@ -57,7 +89,7 @@ const EXPORT_PRESETS = {
     width: 1920,
     height: 1080,
   },
-};
+} as const;
 
 const EXPORT_QUALITIES = {
   draft: {
@@ -91,7 +123,7 @@ const EXPORT_QUALITIES = {
     fps: 30,
     renderScale: 1,
   },
-};
+} as const;
 
 export async function GET() {
   const queueJobs = await renderQueue.getJobs([
@@ -102,42 +134,75 @@ export async function GET() {
     "delayed",
   ]);
 
-  const jobs = queueJobs
-    .map((job) => ({
-      id: String(job.data?.jobId || job.id),
-      status:
-        job.finishedOn && !job.failedReason
-          ? "completed"
-          : job.failedReason
-            ? "failed"
-            : job.processedOn
-              ? "rendering"
-              : "queued",
+  const jobs = await Promise.all(
+    queueJobs.slice(0, MAX_RENDER_JOBS_HISTORY).map(async (job) => {
+      const id = String(job.data?.jobId || job.id);
+      const redisJob = await getRenderJob(id);
+      const bullStatus = getBullJobStatus(job);
+      const status = normalizeStatus(redisJob?.status || bullStatus);
 
-      progress: Number(job.progress || 0),
+      const progress = clampNumber(
+        Number(redisJob?.progress ?? job.progress ?? 0),
+        0,
+        100,
+      );
 
-      message:
-        job.returnvalue?.message ||
-        (job.failedReason
-          ? "فشل التصدير"
-          : job.processedOn
-            ? "جاري التصدير"
-            : "في قائمة الانتظار"),
+      const createdAt =
+        redisJob?.createdAt ||
+        (job.timestamp
+          ? new Date(job.timestamp).toISOString()
+          : new Date().toISOString());
 
-      url: job.returnvalue?.url,
-      fileName: job.returnvalue?.fileName,
+      const updatedAt =
+        redisJob?.updatedAt ||
+        new Date(job.finishedOn || job.processedOn || Date.now()).toISOString();
 
-      createdAt: new Date(job.timestamp).toISOString(),
+      const normalizedJob: RenderJobResponse = {
+        id,
+        status,
+        progress: status === "completed" ? 100 : progress,
+        message:
+          redisJob?.message ||
+          job.returnvalue?.message ||
+          getDefaultStatusMessage(status),
+        url: redisJob?.url || job.returnvalue?.url,
+        fileName: redisJob?.fileName || job.returnvalue?.fileName,
+        error:
+          status === "failed"
+            ? redisJob?.error || job.failedReason || undefined
+            : undefined,
+        createdAt,
+        updatedAt,
+        completedAt:
+          redisJob?.completedAt ||
+          (job.finishedOn ? new Date(job.finishedOn).toISOString() : undefined),
+        exportPreset: redisJob?.exportPreset || job.data?.exportSettings?.preset,
+        exportQuality:
+          redisJob?.exportQuality || job.data?.exportSettings?.quality,
+        exportWidth: redisJob?.exportWidth || job.data?.exportSettings?.width,
+        exportHeight: redisJob?.exportHeight || job.data?.exportSettings?.height,
+        exportFps: redisJob?.exportFps || job.data?.exportSettings?.fps,
+        durationInSeconds: redisJob?.durationInSeconds,
+        durationInFrames:
+          redisJob?.durationInFrames || job.returnvalue?.durationInFrames,
+      };
 
-      updatedAt: new Date(
-        job.finishedOn || job.processedOn || Date.now(),
-      ).toISOString(),
-    }))
+      return normalizedJob;
+    }),
+  );
+
+  const sortedJobs = jobs
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    )
     .slice(0, MAX_RENDER_JOBS_HISTORY);
 
   return NextResponse.json({
-    isRendering: jobs.some((job) => job.status === "rendering"),
-    jobs,
+    isRendering: sortedJobs.some((job) =>
+      ["queued", "validating", "bundling", "rendering"].includes(job.status),
+    ),
+    jobs: sortedJobs,
   });
 }
 
@@ -146,7 +211,6 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-
     const ayahs = Array.isArray(body.ayahs) ? body.ayahs : [];
 
     if (!ayahs.length) {
@@ -171,10 +235,10 @@ export async function POST(request: Request) {
       );
     }
 
-const totalDurationInSeconds = ayahs.reduce(
-  (total: number, ayah: any) => total + Number(ayah.duration || 5),
-  0,
-);
+    const totalDurationInSeconds = ayahs.reduce(
+      (total: number, ayah: any) => total + Number(ayah.duration || 5),
+      0,
+    );
 
     if (totalDurationInSeconds > MAX_DURATION_SECONDS) {
       return NextResponse.json(
@@ -188,16 +252,22 @@ const totalDurationInSeconds = ayahs.reduce(
     }
 
     const exportSettings = resolveExportSettings(body);
-
     jobId = crypto.randomUUID();
 
-    renderJobs.set(jobId, {
-      id: jobId,
+    const now = new Date().toISOString();
+
+    await updateRenderJob(jobId, {
       status: "queued",
       progress: 0,
       message: "تمت إضافة الفيديو لقائمة الانتظار",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
+      durationInSeconds: totalDurationInSeconds,
+      exportPreset: exportSettings.preset,
+      exportQuality: exportSettings.quality,
+      exportWidth: exportSettings.width,
+      exportHeight: exportSettings.height,
+      exportFps: exportSettings.fps,
     });
 
     await renderQueue.add(
@@ -206,18 +276,26 @@ const totalDurationInSeconds = ayahs.reduce(
         jobId,
         body,
         exportSettings,
+        siteUrl:
+          process.env.NEXT_PUBLIC_SITE_URL ||
+          process.env.PUBLIC_SITE_URL ||
+          request.headers.get("origin") ||
+          "http://localhost:3000",
       },
-
       {
         attempts: 2,
-
         backoff: {
           type: "exponential",
           delay: 3000,
         },
-
-        removeOnComplete: 10,
-        removeOnFail: 20,
+        removeOnComplete: {
+          age: 60 * 60,
+          count: 10,
+        },
+        removeOnFail: {
+          age: 60 * 60 * 6,
+          count: 20,
+        },
       },
     );
 
@@ -226,9 +304,20 @@ const totalDurationInSeconds = ayahs.reduce(
       jobId,
       status: "queued",
       progress: 0,
+      message: "تمت إضافة الفيديو لقائمة الانتظار",
     });
   } catch (error: any) {
     console.error("RENDER_ROUTE_ERROR:", error);
+
+    if (jobId) {
+      await updateRenderJob(jobId, {
+        status: "failed",
+        progress: 0,
+        message: error?.message || "Render queue failed",
+        error: error?.message || String(error),
+        completedAt: new Date().toISOString(),
+      });
+    }
 
     return NextResponse.json(
       {
@@ -239,6 +328,37 @@ const totalDurationInSeconds = ayahs.reduce(
       },
     );
   }
+}
+
+function getBullJobStatus(job: any): RenderJobStatus {
+  if (job.finishedOn && !job.failedReason) return "completed";
+  if (job.failedReason) return "failed";
+  if (job.processedOn) return "rendering";
+  return "queued";
+}
+
+function normalizeStatus(status: string | undefined): RenderJobStatus {
+  if (
+    status === "queued" ||
+    status === "validating" ||
+    status === "bundling" ||
+    status === "rendering" ||
+    status === "completed" ||
+    status === "failed"
+  ) {
+    return status;
+  }
+
+  return "queued";
+}
+
+function getDefaultStatusMessage(status: RenderJobStatus) {
+  if (status === "completed") return "تم التصدير بنجاح";
+  if (status === "failed") return "فشل التصدير";
+  if (status === "validating") return "جاري فحص الملفات";
+  if (status === "bundling") return "جاري تجهيز Remotion";
+  if (status === "rendering") return "جاري التصدير";
+  return "في قائمة الانتظار";
 }
 
 function resolveExportSettings(body: any): ExportSettings {
@@ -286,9 +406,11 @@ function resolveExportSettings(body: any): ExportSettings {
 }
 
 function clampNumber(value: number, min: number, max: number) {
+  if (!Number.isFinite(value)) return min;
   return Math.min(Math.max(value, min), max);
 }
 
 function makeEven(value: number) {
-  return value % 2 === 0 ? value : value + 1;
+  const rounded = Math.round(value);
+  return rounded % 2 === 0 ? rounded : rounded + 1;
 }
