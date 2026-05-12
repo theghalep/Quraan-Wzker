@@ -3,6 +3,8 @@ import os from "os";
 import { mkdir, readdir, stat, unlink } from "fs/promises";
 import { NextResponse } from "next/server";
 import crypto from "crypto";
+import { bundle } from "@remotion/bundler";
+import { renderMedia, selectComposition } from "@remotion/renderer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -276,12 +278,6 @@ export async function POST(request: Request) {
       Math.ceil(totalDurationInSeconds * exportSettings.fps),
       Math.ceil(5 * exportSettings.fps),
     );
-
-    const nodeRequire = eval("require");
-
-    const { bundle } = nodeRequire("@remotion/bundler");
-    const { renderMedia, selectComposition } =
-      nodeRequire("@remotion/renderer");
 
     const preparedAyahs = preprocessAyahsForRender({
       ayahs,
