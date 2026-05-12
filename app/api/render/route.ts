@@ -236,33 +236,23 @@ export async function POST(request: Request) {
       request.headers.get("origin") ||
       "http://localhost:3000";
 
-    await renderQueue.add(
-      "render-video",
-      {
-        jobId,
-        body,
-        exportSettings,
-        meta: {
-          origin,
-          firstAyah,
-          lastAyah,
-          totalDurationInSeconds,
-          createdAt: new Date().toISOString(),
-        },
-      },
-      {
-        jobId,
-        attempts: 1,
-        removeOnComplete: {
-          age: 60 * 60 * 24,
-          count: 50,
-        },
-        removeOnFail: {
-          age: 60 * 60 * 24 * 3,
-          count: 50,
-        },
-      },
-    );
+await renderQueue.add(
+  "render-video",
+  {
+    jobId,
+    body,
+    exportSettings,
+  },
+  {
+    attempts: 3,
+    backoff: {
+      type: "exponential",
+      delay: 5000,
+    },
+    removeOnComplete: 20,
+    removeOnFail: 50,
+  }
+);
 
     updateRenderJob(jobId, {
       status: "queued",

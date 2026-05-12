@@ -406,6 +406,23 @@ async function renderQuranVideo({
     },
   });
 
+
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  "http://ec2-56-228-24-131.eu-north-1.compute.amazonaws.com";
+
+const url = `${siteUrl}/exports/${fileName}`;
+
+await updateRenderJob(jobId, {
+  status: "completed",
+  progress: 100,
+  url,
+  fileName,
+  message: "تم التصدير بنجاح",
+  completedAt: new Date().toISOString(),
+});
+
+
   const siteUrl =
     incomingSiteUrl ||
     process.env.NEXT_PUBLIC_SITE_URL ||
