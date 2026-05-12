@@ -277,9 +277,8 @@ export async function POST(request: Request) {
       Math.ceil(5 * exportSettings.fps),
     );
 
-    const { bundle } = await import("@remotion/bundler");
-    const { renderMedia, selectComposition } =
-      await import("@remotion/renderer");
+    const { bundle, renderMedia, selectComposition } =
+      await loadRemotionRuntime();
 
     const preparedAyahs = preprocessAyahsForRender({
       ayahs,
@@ -544,6 +543,24 @@ export async function POST(request: Request) {
       isRendering = false;
     }
   }
+}
+
+async function loadRemotionRuntime() {
+  // Keep Remotion out of Next.js webpack compilation, but load it at runtime.
+  // The required packages are included via outputFileTracingIncludes in next.config.js.
+  const dynamicImport = new Function(
+    "specifier",
+    "return import(specifier)",
+  ) as (specifier: string) => Promise<any>;
+
+  const bundler = await dynamicImport("@remotion/bundler");
+  const renderer = await dynamicImport("@remotion/renderer");
+
+  return {
+    bundle: bundler.bundle,
+    renderMedia: renderer.renderMedia,
+    selectComposition: renderer.selectComposition,
+  };
 }
 
 function resolveExportSettings(body: any) {

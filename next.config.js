@@ -1,5 +1,4 @@
 /** @type {import('next').NextConfig} */
-
 const nextConfig = {
   reactStrictMode: false,
   swcMinify: true,
@@ -10,13 +9,15 @@ const nextConfig = {
     loaderFile: "./image-loader.js",
   },
 
-  outputFileTracingIncludes: {
-    "/api/render": [
-      "./node_modules/@remotion/bundler/**/*",
-      "./node_modules/@remotion/renderer/**/*",
-      "./node_modules/@remotion/lambda/**/*",
-      "./node_modules/remotion/**/*",
-    ],
+  experimental: {
+    outputFileTracingIncludes: {
+      "/api/render": [
+        "./node_modules/@remotion/**/*",
+        "./node_modules/remotion/**/*",
+        "./node_modules/@rspack/**/*",
+        "./node_modules/esbuild/**/*",
+      ],
+    },
   },
 };
 
