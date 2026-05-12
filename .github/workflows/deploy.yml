@@ -21,6 +21,6 @@ jobs:
 
       - run: npx sst deploy --stage production
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ AKIA6QLQ7CEHY5EPHKXU }}
+          AWS_SECRET_ACCESS_KEY: ${{ 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 }}
           AWS_REGION: eu-central-1
