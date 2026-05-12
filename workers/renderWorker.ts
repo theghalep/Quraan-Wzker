@@ -1,7 +1,7 @@
 import { Worker } from "bullmq";
 import { redis } from "../lib/queue/redis";
 
-const worker = new Worker(
+new Worker(
   "render-queue",
   async (job) => {
     console.log("Processing render job:", job.id);
