@@ -31,10 +31,10 @@ const MAX_DURATION_SECONDS = 600;
 const EXPORTS_MAX_AGE_MS = 1000 * 60 * 60 * 24;
 const ASSET_CHECK_TIMEOUT_MS = 8000;
 const RENDER_TIMEOUT_MS = 1000 * 60 * 20;
-const DEFAULT_RENDER_CONCURRENCY_RATIO = 0.5;
-const MAX_RENDER_CONCURRENCY = Number(process.env.REMOTION_MAX_RENDER_CONCURRENCY || 4);
-const ASSET_CHECK_CONCURRENCY = Number(process.env.RENDER_ASSET_CHECK_CONCURRENCY || 4);
-const PROGRESS_UPDATE_INTERVAL_MS = 1200;
+const DEFAULT_RENDER_CONCURRENCY_RATIO = 0.35;
+const MAX_RENDER_CONCURRENCY = Number(process.env.REMOTION_MAX_RENDER_CONCURRENCY || 1);
+const ASSET_CHECK_CONCURRENCY = Number(process.env.RENDER_ASSET_CHECK_CONCURRENCY || 2);
+const PROGRESS_UPDATE_INTERVAL_MS = 1800;
 
 new Worker(
   "render-queue",
@@ -314,6 +314,7 @@ async function renderQuranVideo({
     audioBitrate: getAudioBitrate(exportSettings.audioBitrate),
 
     concurrency: renderConcurrency,
+    scale: getRenderScale(exportSettings),
 
     imageFormat: "jpeg",
     jpegQuality: getJpegQuality(exportSettings.quality),
@@ -324,7 +325,7 @@ async function renderQuranVideo({
     chromiumOptions: {
       disableWebSecurity: true,
       gl: getChromiumGlBackend(),
-      enableMultiProcessOnLinux: true,
+      enableMultiProcessOnLinux: false,
     },
 
     timeoutInMilliseconds: RENDER_TIMEOUT_MS,
@@ -744,52 +745,42 @@ function getRenderConcurrency() {
   const envConcurrency = Number(process.env.REMOTION_RENDER_CONCURRENCY);
 
   if (Number.isFinite(envConcurrency) && envConcurrency > 0) {
-    return Math.max(1, Math.floor(envConcurrency));
+    return Math.max(1, Math.min(Math.floor(envConcurrency), 1));
   }
 
-  const isLowMemoryHost =
-    Boolean(process.env.RAILWAY_ENVIRONMENT) ||
-    Number(process.env.RENDER_SAFE_MODE || 0) === 1;
+  // EC2 CPU/RAM-safe default. Remotion + Chromium + FFmpeg can spike memory
+  // even when average usage looks low, so keep one browser renderer active.
+  return 1;
+}
 
-  if (isLowMemoryHost) {
-    return 1;
+function getRenderScale(exportSettings: ExportSettings) {
+  const envScale = Number(process.env.REMOTION_RENDER_SCALE);
+
+  if (Number.isFinite(envScale) && envScale > 0) {
+    return clampNumber(envScale, 0.55, 1);
   }
 
-  const cpuCount = Math.max(os.cpus()?.length || 2, 2);
-  const freeMemoryGb = os.freemem() / 1024 / 1024 / 1024;
-  const memorySafeConcurrency = Math.max(1, Math.floor(freeMemoryGb / 1.25));
+  if (exportSettings.quality === "draft") return 0.6;
+  if (exportSettings.quality === "standard") return 0.7;
+  if (exportSettings.quality === "ultra") return 0.82;
 
-  const envRatio = Number(process.env.REMOTION_CONCURRENCY_RATIO);
-  const ratio =
-    Number.isFinite(envRatio) && envRatio > 0 && envRatio <= 1
-      ? envRatio
-      : DEFAULT_RENDER_CONCURRENCY_RATIO;
-
-  const cpuSafeConcurrency = Math.max(1, Math.floor(cpuCount * ratio));
-  const maxConcurrency =
-    Number.isFinite(MAX_RENDER_CONCURRENCY) && MAX_RENDER_CONCURRENCY > 0
-      ? Math.floor(MAX_RENDER_CONCURRENCY)
-      : 4;
-
-  return clampNumber(
-    Math.min(cpuSafeConcurrency, memorySafeConcurrency, maxConcurrency),
-    1,
-    cpuCount,
-  );
+  return clampNumber(Number(exportSettings.renderScale || 0.72), 0.65, 0.82);
 }
 
 
 function getRenderCrf(quality: string, incomingCrf: number) {
+  // Higher CRF = smaller/faster/lighter. Keep export stable on small EC2.
+  if (quality === "draft") return 32;
+  if (quality === "standard") return 28;
+  if (quality === "ultra") return 24;
+
   if (Number.isFinite(incomingCrf)) {
-    return clampNumber(Math.round(incomingCrf), 18, 30);
+    return clampNumber(Math.max(Math.round(incomingCrf), 25), 24, 32);
   }
 
-  if (quality === "draft") return 28;
-  if (quality === "standard") return 24;
-  if (quality === "ultra") return 20;
-
-  return 22;
+  return 26;
 }
+
 
 function getAudioBitrate(incomingAudioBitrate?: string) {
   if (incomingAudioBitrate && /^\d+k$/.test(incomingAudioBitrate)) {
@@ -800,20 +791,20 @@ function getAudioBitrate(incomingAudioBitrate?: string) {
 }
 
 function getJpegQuality(quality: string) {
-  if (quality === "draft") return 76;
-  if (quality === "standard") return 80;
-  if (quality === "ultra") return 88;
+  if (quality === "draft") return 68;
+  if (quality === "standard") return 72;
+  if (quality === "ultra") return 80;
 
-  return 82;
+  return 76;
 }
+
 
 function getX264Preset(quality: string) {
-  if (quality === "draft") return "ultrafast";
-  if (quality === "standard") return "veryfast";
-  if (quality === "ultra") return "faster";
+  if (quality === "ultra") return "veryfast";
 
-  return "veryfast";
+  return "ultrafast";
 }
+
 
 function getChromiumGlBackend() {
   const requestedGl = process.env.REMOTION_CHROMIUM_GL;
@@ -822,7 +813,7 @@ function getChromiumGlBackend() {
     return requestedGl as "angle" | "egl" | "swangle" | "vulkan" | "disabled";
   }
 
-  return "angle";
+  return "swangle";
 }
 
 function sanitizeFileName(value: string) {
