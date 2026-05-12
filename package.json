@@ -29,14 +29,18 @@
     "onetime": "^8.0.0",
     "openai": "^6.37.0",
     "p-limit": "^7.3.0",
+    "path-key": "^4.0.0",
     "puppeteer-core": "^24.43.1",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "remotion": "^4.0.459",
+    "shebang-command": "^2.0.0",
+    "shebang-regex": "^4.0.0",
     "signal-exit": "^4.1.0",
     "source-map": "^0.7.6",
     "sst": "4.13.1",
-    "strip-final-newline": "^4.0.0"
+    "strip-final-newline": "^4.0.0",
+    "which": "^7.0.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
