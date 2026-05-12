@@ -13,6 +13,7 @@
     "@remotion/lambda": "^4.0.459",
     "@remotion/player": "^4.0.459",
     "@remotion/renderer": "^4.0.459",
+    "execa": "^9.6.1",
     "framer-motion": "^12.0.0",
     "lucide-react": "^0.468.0",
     "next": "14.2.35",
