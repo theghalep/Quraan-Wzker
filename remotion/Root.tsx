@@ -121,7 +121,7 @@ const defaultProps: QuranReelProps = {
   manualWordTimings: {},
 
   showBismillahIntro: true,
-  bismillahAudioUrl: "/audio/bismillah.mp3",
+bismillahAudioUrl: "",
   bismillahDuration: 3.2,
 
   showSurahName: true,

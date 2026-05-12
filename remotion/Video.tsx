@@ -120,7 +120,7 @@ type TimelineItem = {
 const DEFAULT_FPS = 30;
 const BISMILLAH_TEXT = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ";
 const DEFAULT_BISMILLAH_AUDIO =
-  "http://localhost:3000/audio/bismillah.mp3";
+  "";
 const FALLBACK_AYAH: Ayah = {
   text: BISMILLAH_TEXT,
   audio: "",
