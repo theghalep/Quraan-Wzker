@@ -161,8 +161,7 @@ async function renderQuranVideo({
   siteUrl?: string;
 }) {
   const ayahs = Array.isArray(body.ayahs) ? body.ayahs : [];
-  const exportSettings = incomingExportSettings || resolveExportSettings(body);
-
+const exportSettings = incomingExportSettings;
   const firstAyah = ayahs[0]?.numberInSurah || "start";
   const lastAyah = ayahs[ayahs.length - 1]?.numberInSurah || "end";
 
