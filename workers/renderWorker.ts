@@ -276,7 +276,7 @@ async function renderQuranVideo({
   const safePreset = sanitizeFileName(exportSettings.preset || "export");
   const safeQuality = sanitizeFileName(exportSettings.quality || "quality");
 
-  const fileName = `${safeReciter}-${safeSurah}-ayah-${firstAyah}-to-${lastAyah}-${safePreset}-${safeQuality}-${exportSettings.width}x${exportSettings.height}-${fileId}.mp4`;
+const fileName = `quran-reel-ayah-${firstAyah}-to-${lastAyah}-${safePreset}-${safeQuality}-${exportSettings.width}x${exportSettings.height}-${fileId}.mp4`;
   const outputLocation = path.join(exportsDir, fileName);
 
   await cleanupOldExports(exportsDir);
