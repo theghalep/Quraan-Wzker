@@ -54,23 +54,23 @@ const MAX_DURATION_SECONDS = 600;
 const MAX_RENDER_JOBS_HISTORY = 25;
 
 const EXPORT_PRESETS = {
-  reels: {
-    label: "Reels",
-    width: 1080,
-    height: 1920,
-  },
+ reels: {
+  label: "Reels",
+  width: 720,
+  height: 1280,
+},
 
-  tiktok: {
-    label: "TikTok",
-    width: 1080,
-    height: 1920,
-  },
+tiktok: {
+  label: "TikTok",
+  width: 720,
+  height: 1280,
+},
 
-  shorts: {
-    label: "YouTube Shorts",
-    width: 1080,
-    height: 1920,
-  },
+shorts: {
+  label: "YouTube Shorts",
+  width: 720,
+  height: 1280,
+},
 
   whatsapp: {
     label: "WhatsApp Status",
@@ -113,7 +113,7 @@ const EXPORT_QUALITIES = {
     crf: 23,
     audioBitrate: "128k",
     fps: 30,
-    renderScale: 1,
+  renderScale: 0.55,
   },
 
   ultra: {
@@ -121,7 +121,7 @@ const EXPORT_QUALITIES = {
     crf: 20,
     audioBitrate: "192k",
     fps: 30,
-    renderScale: 1,
+  renderScale: 0.65,
   },
 } as const;
 
