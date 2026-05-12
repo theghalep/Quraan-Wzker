@@ -641,6 +641,8 @@ function VideoCanvas({
   backgroundVideoRef?: React.RefObject<HTMLVideoElement | null>;
   previewPlaying?: boolean;
 }) {
+  const IS_LITE_RENDER = isRemotionRender;
+
   const animationStyleTag = `
 @keyframes fadeZoom {
   0% {
@@ -745,6 +747,7 @@ function VideoCanvas({
             <OffthreadVideo
               src={backgroundVideoUrl}
               muted
+              playbackRate={0.9}
               style={{
                 position: "absolute",
                 inset: 0,
@@ -800,7 +803,7 @@ function VideoCanvas({
           style={{
             position: "absolute",
             inset: 0,
-            background: layoutOverlayStrength,
+            background: IS_LITE_RENDER ? "linear-gradient(to bottom, rgba(0,0,0,0.10), rgba(0,0,0,0.18))" : layoutOverlayStrength,
             zIndex: 1,
           }}
         />
@@ -810,7 +813,7 @@ function VideoCanvas({
             position: "absolute",
             inset: 0,
             background:
-              "radial-gradient(circle at center, transparent 30%, rgba(0,0,0,0.24) 100%)",
+              IS_LITE_RENDER ? "rgba(0,0,0,0.10)" : "radial-gradient(circle at center, transparent 30%, rgba(0,0,0,0.24) 100%)",
             zIndex: 2,
             pointerEvents: "none",
           }}
@@ -881,7 +884,7 @@ function VideoCanvas({
             justifyContent: "center",
             padding: `0 ${captionLayout.sidePadding}px`,
             textAlign: "center",
-            animation: ayahAnimation,
+            animation: IS_LITE_RENDER ? "none" : ayahAnimation,
           }}
         >
           <div
@@ -900,13 +903,13 @@ function VideoCanvas({
               padding: `${captionLayout.paddingY + 22}px ${captionLayout.paddingX + 28}px`,
               border: "1px solid rgba(255,255,255,0.10)",
               boxShadow: isRemotionRender
-                ? "0 14px 34px rgba(0,0,0,0.30)"
-                : "0 18px 55px rgba(0,0,0,0.42)",
+                ? "0 6px 16px rgba(0,0,0,0.18)"
+                : "0 10px 24px rgba(0,0,0,0.22)",
               width: isLandscapeExport ? "88%" : isSquareExport ? "86%" : "82%",
               maxWidth: captionLayout.maxWidth,
               minWidth: isLandscapeExport ? "56%" : "60%",
               overflow: "visible",
-              backdropFilter: isRemotionRender ? "none" : "blur(10px)",
+              backdropFilter: IS_LITE_RENDER ? "none" : "blur(10px)",
             }}
           >
             <AnimatedText
@@ -990,7 +993,7 @@ function VideoCanvas({
                 background: progressColor,
                 boxShadow: isRemotionRender
                   ? "none"
-                  : `0 0 18px ${progressColor}`,
+                  : "none",
                 transition: isRemotionRender ? "none" : "width 0.08s linear",
               }}
             />
@@ -1268,7 +1271,7 @@ function AnimatedText({
     lineHeight: isLandscapeCaption ? 1.9 : isSquareCaption ? 2.02 : 2.15,
     textShadow: isRemotionRender
       ? "0 2px 5px rgba(0,0,0,0.95)"
-      : "0 3px 12px rgba(0,0,0,0.98), 0 0 18px rgba(0,0,0,0.7)",
+      : "0 1px 4px rgba(0,0,0,0.9)",
     direction: "rtl",
     unicodeBidi: "plaintext",
     fontFamily: `"${fontFamily}", "KFGQPC Uthmanic Script HAFS", "Amiri Quran", "Noto Naskh Arabic", "Amiri", serif`,
@@ -1287,7 +1290,7 @@ function AnimatedText({
     letterSpacing: "0",
     animation:
       animationStyle === "glow" && !isRemotionRender
-        ? "glowText 2.2s ease-in-out infinite"
+        ? undefined
         : undefined,
   };
 
