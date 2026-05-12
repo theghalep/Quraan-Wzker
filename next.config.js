@@ -5,13 +5,6 @@ const nextConfig = {
 
   swcMinify: true,
 
-  experimental: {
-    serverComponentsExternalPackages: [
-      "@remotion/bundler",
-      "@remotion/renderer",
-    ],
-  },
-
   images: {
     unoptimized: true,
     loader: "custom",
