@@ -108,6 +108,44 @@ const EXPORT_QUALITIES: Record<
   },
 };
 
+
+async function assertAssetAvailable(url: string, label: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const response = await fetch(url, {
+      method: "HEAD",
+      signal: controller.signal,
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error(`${label} غير متاح حاليًا`);
+    }
+  } catch {
+    try {
+      const fallback = await fetch(url, {
+        method: "GET",
+        headers: {
+          Range: "bytes=0-1",
+        },
+        signal: controller.signal,
+        cache: "no-store",
+      });
+
+      if (!fallback.ok && fallback.status !== 206) {
+        throw new Error(`${label} غير متاح حاليًا`);
+      }
+    } catch {
+      throw new Error(
+        `تعذر تحميل ${label}. جرّب تغيير الخلفية أو إعادة إنشاء المعاينة.`,
+      );
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 new Worker(
   "render-queue",
   async (job) => {
