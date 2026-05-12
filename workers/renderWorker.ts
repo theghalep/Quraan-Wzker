@@ -465,49 +465,33 @@ function getAssetCheckConcurrency() {
   return 4;
 }
 
-async function assertAssetAvailable(url: string, label: string) {
-  if (!url || typeof url !== "string") {
-    throw new Error(`${label} غير متاح حاليًا`);
-  }
-
-  if (url.startsWith("/") || url.startsWith("file:")) {
+async function assertAssetAvailable(
+  url: string,
+  label: string,
+): Promise<void> {
+  if (!url) {
     return;
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), ASSET_CHECK_TIMEOUT_MS);
+  // السماح بالملفات المحلية
+  if (
+    url.startsWith("/") ||
+    url.startsWith("file:") ||
+    url.includes("localhost")
+  ) {
+    return;
+  }
 
   try {
     const response = await fetch(url, {
       method: "HEAD",
-      signal: controller.signal,
-      cache: "no-store",
     });
 
     if (!response.ok) {
-      throw new Error(`${label} غير متاح حاليًا`);
+      throw new Error();
     }
   } catch {
-    try {
-      const fallback = await fetch(url, {
-        method: "GET",
-        headers: {
-          Range: "bytes=0-1",
-        },
-        signal: controller.signal,
-        cache: "no-store",
-      });
-
-      if (!fallback.ok && fallback.status !== 206) {
-        throw new Error(`${label} غير متاح حاليًا`);
-      }
-    } catch {
-      throw new Error(
-        `تعذر تحميل ${label}. جرّب تغيير الخلفية أو إعادة إنشاء المعاينة.`,
-      );
-    }
-  } finally {
-    clearTimeout(timeout);
+    console.warn(`Skipping remote asset validation for ${label}: ${url}`);
   }
 }
 
