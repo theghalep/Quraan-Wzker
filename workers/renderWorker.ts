@@ -28,124 +28,6 @@ const ASSET_CHECK_TIMEOUT_MS = 10000;
 const RENDER_TIMEOUT_MS = 1000 * 60 * 15;
 const DEFAULT_RENDER_CONCURRENCY_RATIO = 0.65;
 
-const EXPORT_PRESETS: Record<
-  string,
-  {
-    label: string;
-    width: number;
-    height: number;
-  }
-> = {
-  reels: {
-    label: "Reels",
-    width: 1080,
-    height: 1920,
-  },
-  tiktok: {
-    label: "TikTok",
-    width: 1080,
-    height: 1920,
-  },
-  shorts: {
-    label: "YouTube Shorts",
-    width: 1080,
-    height: 1920,
-  },
-  whatsapp: {
-    label: "WhatsApp Status",
-    width: 720,
-    height: 1280,
-  },
-  square: {
-    label: "Square Post",
-    width: 1080,
-    height: 1080,
-  },
-  landscape: {
-    label: "Landscape",
-    width: 1920,
-    height: 1080,
-  },
-};
-
-const EXPORT_QUALITIES: Record<
-  string,
-  {
-    label: string;
-    crf: number;
-    audioBitrate: string;
-    fps: number;
-    renderScale: number;
-  }
-> = {
-  draft: {
-    label: "Draft",
-    crf: 34,
-    audioBitrate: "80k",
-    fps: 24,
-    renderScale: 0.75,
-  },
-  standard: {
-    label: "Standard",
-    crf: 30,
-    audioBitrate: "96k",
-    fps: 24,
-    renderScale: 1,
-  },
-  high: {
-    label: "High",
-    crf: 24,
-    audioBitrate: "160k",
-    fps: 24,
-    renderScale: 1,
-  },
-  ultra: {
-    label: "Ultra",
-    crf: 20,
-    audioBitrate: "192k",
-    fps: 30,
-    renderScale: 1,
-  },
-};
-
-
-async function assertAssetAvailable(url: string, label: string) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
-
-  try {
-    const response = await fetch(url, {
-      method: "HEAD",
-      signal: controller.signal,
-      cache: "no-store",
-    });
-
-    if (!response.ok) {
-      throw new Error(`${label} غير متاح حاليًا`);
-    }
-  } catch {
-    try {
-      const fallback = await fetch(url, {
-        method: "GET",
-        headers: {
-          Range: "bytes=0-1",
-        },
-        signal: controller.signal,
-        cache: "no-store",
-      });
-
-      if (!fallback.ok && fallback.status !== 206) {
-        throw new Error(`${label} غير متاح حاليًا`);
-      }
-    } catch {
-      throw new Error(
-        `تعذر تحميل ${label}. جرّب تغيير الخلفية أو إعادة إنشاء المعاينة.`,
-      );
-    }
-  } finally {
-    clearTimeout(timeout);
-  }
-}
 new Worker(
   "render-queue",
   async (job) => {
@@ -175,7 +57,6 @@ new Worker(
         completedAt: new Date().toISOString(),
       });
 
-      
       throw error;
     }
   },
@@ -198,15 +79,15 @@ async function renderQuranVideo({
   exportSettings?: ExportSettings;
   siteUrl?: string;
 }) {
-const ayahs = Array.isArray(body.ayahs) ? body.ayahs : [];
+  const ayahs = Array.isArray(body.ayahs) ? body.ayahs : [];
 
-if (!incomingExportSettings) {
-  throw new Error("Missing export settings for render job");
-}
+  if (!incomingExportSettings) {
+    throw new Error("Missing export settings for render job");
+  }
 
-const exportSettings = incomingExportSettings;
+  const exportSettings = incomingExportSettings;
 
-const firstAyah = ayahs[0]?.numberInSurah || "start";
+  const firstAyah = ayahs[0]?.numberInSurah || "start";
   const lastAyah = ayahs[ayahs.length - 1]?.numberInSurah || "end";
 
   await updateRenderJob(jobId, {
@@ -358,6 +239,10 @@ const firstAyah = ayahs[0]?.numberInSurah || "start";
     });
   }
 
+  if (!bundled) {
+    throw new Error("Failed to create Remotion bundle");
+  }
+
   const composition = await selectComposition({
     serveUrl: bundled,
     id: "QuranReel",
@@ -382,7 +267,6 @@ const firstAyah = ayahs[0]?.numberInSurah || "start";
   const safeQuality = sanitizeFileName(exportSettings.quality || "quality");
 
   const fileName = `${safeReciter}-${safeSurah}-ayah-${firstAyah}-to-${lastAyah}-${safePreset}-${safeQuality}-${exportSettings.width}x${exportSettings.height}-${fileId}.mp4`;
-
   const outputLocation = path.join(exportsDir, fileName);
 
   await cleanupOldExports(exportsDir);
@@ -432,54 +316,56 @@ const firstAyah = ayahs[0]?.numberInSurah || "start";
 
     timeoutInMilliseconds: RENDER_TIMEOUT_MS,
 
-onProgress: async ({ progress }: { progress: number }) => {
-  const renderProgress = Math.round(progress * 100);
+    onProgress: async ({ progress }: { progress: number }) => {
+      const renderProgress = Math.round(progress * 100);
 
-  const totalProgress = Math.min(
-    99,
-    25 + Math.round(renderProgress * 0.74),
-  );
+      const totalProgress = Math.min(
+        99,
+        25 + Math.round(renderProgress * 0.74),
+      );
 
-  await updateRenderJob(jobId, {
-    status: "rendering",
-    progress: totalProgress,
-    message: `جاري التصدير ${renderProgress}%`,
+      await updateRenderJob(jobId, {
+        status: "rendering",
+        progress: totalProgress,
+        message: `جاري التصدير ${renderProgress}%`,
+      });
+
+      console.log(
+        JSON.stringify({
+          type: "render-progress",
+          jobId,
+          progress: totalProgress,
+        }),
+      );
+
+      console.log(`RENDER_PROGRESS:${jobId}:${renderProgress}`);
+    },
   });
 
-  console.log(
-    JSON.stringify({
-      type: "render-progress",
-      jobId,
-      progress: totalProgress,
-    }),
-  );
+  const siteUrl =
+    incomingSiteUrl ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.PUBLIC_SITE_URL ||
+    "http://ec2-56-228-24-131.eu-north-1.compute.amazonaws.com";
 
-  console.log(`RENDER_PROGRESS:${jobId}:${renderProgress}`);
-},
+  const url = `${siteUrl.replace(/\/$/, "")}/exports/${fileName}`;
 
-const siteUrl =
-  incomingSiteUrl ||
-  process.env.NEXT_PUBLIC_SITE_URL ||
-  process.env.PUBLIC_SITE_URL ||
-  "http://ec2-56-228-24-131.eu-north-1.compute.amazonaws.com";
+  await updateRenderJob(jobId, {
+    status: "completed",
+    progress: 100,
+    message: "تم التصدير بنجاح",
+    url,
+    fileName,
+    durationInSeconds: totalDurationInSeconds,
+    durationInFrames,
+    exportPreset: exportSettings.preset,
+    exportQuality: exportSettings.quality,
+    exportWidth: exportSettings.width,
+    exportHeight: exportSettings.height,
+    exportFps: exportSettings.fps,
+    completedAt: new Date().toISOString(),
+  });
 
-const url = `${siteUrl.replace(/\/$/, "")}/exports/${fileName}`;
-
-await updateRenderJob(jobId, {
-  status: "completed",
-  progress: 100,
-  message: "تم التصدير بنجاح",
-  url,
-  fileName,
-  durationInSeconds: totalDurationInSeconds,
-  durationInFrames,
-  exportPreset: exportSettings.preset,
-  exportQuality: exportSettings.quality,
-  exportWidth: exportSettings.width,
-  exportHeight: exportSettings.height,
-  exportFps: exportSettings.fps,
-  completedAt: new Date().toISOString(),
-});
   return {
     jobId,
     status: "completed",
@@ -509,51 +395,6 @@ async function loadRemotionRuntime() {
     bundle: bundler.bundle,
     renderMedia: renderer.renderMedia,
     selectComposition: renderer.selectComposition,
-  };
-}
-
-function resolveExportSettings(body: any): ExportSettings {
-  const requestedPreset = String(body.exportPreset || "reels").trim();
-  const preset = EXPORT_PRESETS[requestedPreset] ? requestedPreset : "reels";
-
-  const requestedQuality = String(body.exportQuality || "high").trim();
-  const quality = EXPORT_QUALITIES[requestedQuality]
-    ? requestedQuality
-    : "high";
-
-  const presetSettings = EXPORT_PRESETS[preset];
-  const qualitySettings = EXPORT_QUALITIES[quality];
-
-  const requestedWidth = Number(body.exportWidth || presetSettings.width);
-  const requestedHeight = Number(body.exportHeight || presetSettings.height);
-
-  const width = clampNumber(
-    Number.isFinite(requestedWidth)
-      ? Math.round(requestedWidth)
-      : presetSettings.width,
-    360,
-    3840,
-  );
-
-  const height = clampNumber(
-    Number.isFinite(requestedHeight)
-      ? Math.round(requestedHeight)
-      : presetSettings.height,
-    360,
-    3840,
-  );
-
-  return {
-    preset,
-    label: presetSettings.label,
-    quality,
-    qualityLabel: qualitySettings.label,
-    width: makeEven(width),
-    height: makeEven(height),
-    crf: qualitySettings.crf,
-    audioBitrate: qualitySettings.audioBitrate,
-    fps: clampNumber(Number(body.exportFps || qualitySettings.fps), 24, 60),
-    renderScale: qualitySettings.renderScale,
   };
 }
 
@@ -815,7 +656,7 @@ function buildAutoWordStartTimesForRender({
 
 function getRecitationWordWeightForRender(rawWord: string) {
   const word = rawWord || "";
-  const cleanWord = word.replace(/[^\u0600-\u06FFa-zA-Z0-9]/g, "");
+  const cleanWord = word.replace(/[^؀-ۿa-zA-Z0-9]/g, "");
   const letters = cleanWord.length;
   const harakat = (word.match(/[ًٌٍَُِّْٰ]/g) || []).length;
   const maddLetters = (word.match(/[اويىآ]/g) || []).length;
@@ -892,17 +733,13 @@ function getChromiumGlBackend() {
 function sanitizeFileName(value: string) {
   return value
     .trim()
-    .replace(/[\\/:*?"<>|]/g, "")
+    .replace(/[\/:*?"<>|]/g, "")
     .replace(/\s+/g, "-")
     .slice(0, 80);
 }
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
-}
-
-function makeEven(value: number) {
-  return value % 2 === 0 ? value : value + 1;
 }
 
 async function cleanupOldExports(exportsDir: string) {
@@ -925,19 +762,4 @@ async function cleanupOldExports(exportsDir: string) {
   } catch (error) {
     console.log("CLEANUP_EXPORTS_ERROR:", error);
   }
-}
-async function loadRemotionRuntime() {
-  const dynamicImport = new Function(
-    "specifier",
-    "return import(specifier)",
-  ) as (specifier: string) => Promise<any>;
-
-  const bundler = await dynamicImport("@remotion/bundler");
-  const renderer = await dynamicImport("@remotion/renderer");
-
-  return {
-    bundle: bundler.bundle,
-    renderMedia: renderer.renderMedia,
-    selectComposition: renderer.selectComposition,
-  };
 }
