@@ -68,14 +68,21 @@ type AiSuggestion = {
 };
 
 type ExportJob = {
-  jobId: string;
+  id?: string;
+  jobId?: string;
   status: string;
   progress?: number;
   fileName?: string;
   url?: string;
-  createdAt: number;
-  completedAt?: number;
+  createdAt?: number | string;
+  updatedAt?: number | string;
+  completedAt?: number | string;
   error?: string;
+  reciter?: string;
+  surahName?: string;
+  fromAyah?: number | string;
+  toAyah?: number | string;
+  durationInSeconds?: number;
   metadata?: {
     reciter?: string;
     surahName?: string;
@@ -490,7 +497,8 @@ export default function Home() {
       if (!response.ok) return;
 
       const data = await response.json();
-      setRecentExports(Array.isArray(data.jobs) ? data.jobs : []);
+      const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+      setRecentExports(jobs.map(normalizeExportJob));
     } catch (error) {
       console.log(error);
     } finally {
@@ -3075,9 +3083,14 @@ export default function Home() {
                         </div>
                       ) : (
                         <div className="space-y-3">
-                          {recentExports.slice(0, 5).map((job) => (
-                            <ExportJobCard key={job.jobId} job={job} />
-                          ))}
+                          {recentExports.slice(0, 5).map((job, index) => {
+                            const key =
+                              job.jobId ||
+                              job.id ||
+                              `${job.fileName || "export"}-${index}`;
+
+                            return <ExportJobCard key={key} job={job} />;
+                          })}
                         </div>
                       )}
                     </div>
@@ -3471,10 +3484,41 @@ function ScoreBreakdownBox({
   );
 }
 
+function normalizeExportJob(job: any): ExportJob {
+  const id = job?.jobId || job?.id || "";
+
+  return {
+    ...job,
+    id: job?.id || id,
+    jobId: id,
+    status: job?.status || "queued",
+    progress: Number.isFinite(Number(job?.progress)) ? Number(job.progress) : 0,
+    fileName: job?.fileName || "",
+    url: job?.url || "",
+    createdAt: job?.createdAt || Date.now(),
+    completedAt: job?.completedAt,
+    error: job?.error || "",
+    metadata: job?.metadata || {
+      reciter: job?.reciter,
+      surahName: job?.surahName,
+      firstAyah: job?.fromAyah,
+      lastAyah: job?.toAyah,
+      durationInSeconds: job?.durationInSeconds,
+    },
+  };
+}
+
 function ExportJobCard({ job }: { job: ExportJob }) {
-  const status = getExportStatusLabel(job.status);
-  const title = job.fileName || `تصدير ${job.jobId.slice(0, 8)}`;
-  const meta = job.metadata;
+  const status = getExportStatusLabel(job.status || "queued");
+  const jobIdentifier = String(job.jobId || job.id || job.fileName || "export");
+  const title = job.fileName || `تصدير ${jobIdentifier.slice(0, 8)}`;
+  const meta = job.metadata || {
+    reciter: job.reciter,
+    surahName: job.surahName,
+    firstAyah: job.fromAyah,
+    lastAyah: job.toAyah,
+    durationInSeconds: job.durationInSeconds,
+  };
   const ayahRange =
     meta?.firstAyah && meta?.lastAyah
       ? `آيات ${meta.firstAyah} - ${meta.lastAyah}`
@@ -3821,16 +3865,23 @@ function getExportStatusLabel(status: string) {
   };
 }
 
-function formatExportDate(value?: number) {
+function formatExportDate(value?: number | string) {
   if (!value) return "-";
 
   try {
+    const date =
+      typeof value === "number" && value < 100000000000
+        ? new Date(value * 1000)
+        : new Date(value);
+
+    if (Number.isNaN(date.getTime())) return "-";
+
     return new Intl.DateTimeFormat("ar-EG", {
       hour: "2-digit",
       minute: "2-digit",
       day: "2-digit",
       month: "short",
-    }).format(new Date(value));
+    }).format(date);
   } catch {
     return "-";
   }
@@ -3993,7 +4044,7 @@ function playExportDoneSound() {
   }
 }
 
-function shortText(text: string) {
+function shortText(text = "") {
   return text.length > 55 ? text.slice(0, 55) + "..." : text;
 }
 
@@ -4183,9 +4234,11 @@ function splitTextWords(text: string) {
 function getAyahSyncKey(ayah?: Ayah, index = 0) {
   if (!ayah) return `fallback-${index}`;
 
+  const safeText = ayah.text || "";
+
   return ayah.numberInSurah
     ? `ayah-${ayah.numberInSurah}`
-    : `text-${index}-${ayah.text.slice(0, 24)}`;
+    : `text-${index}-${safeText.slice(0, 24)}`;
 }
 
 function getCurrentPreviewSyncItem(ayahs: ReelAyah[], currentSeconds: number) {
