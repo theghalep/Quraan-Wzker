@@ -198,9 +198,15 @@ async function renderQuranVideo({
   exportSettings?: ExportSettings;
   siteUrl?: string;
 }) {
-  const ayahs = Array.isArray(body.ayahs) ? body.ayahs : [];
+const ayahs = Array.isArray(body.ayahs) ? body.ayahs : [];
+
+if (!incomingExportSettings) {
+  throw new Error("Missing export settings for render job");
+}
+
 const exportSettings = incomingExportSettings;
-  const firstAyah = ayahs[0]?.numberInSurah || "start";
+
+const firstAyah = ayahs[0]?.numberInSurah || "start";
   const lastAyah = ayahs[ayahs.length - 1]?.numberInSurah || "end";
 
   await updateRenderJob(jobId, {
