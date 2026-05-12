@@ -1,0 +1,24 @@
+@font-face {
+  font-family: "Amiri";
+  src: url("/fonts/Amiri-Regular.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "NotoNaskh";
+  src: url("/fonts/NotoNaskhArabic-Regular.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Cairo";
+  src: url("/fonts/Cairo-Regular.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "IBMPlexArabic";
+  src: url("/fonts/IBMPlexSansArabic-Regular.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "AmiriQuran-Regular";
+  src: url("/fonts/AmiriQuran-Regular.ttf") format("truetype");
+}

@@ -408,45 +408,28 @@ async function renderQuranVideo({
 
 
 const siteUrl =
+  incomingSiteUrl ||
   process.env.NEXT_PUBLIC_SITE_URL ||
+  process.env.PUBLIC_SITE_URL ||
   "http://ec2-56-228-24-131.eu-north-1.compute.amazonaws.com";
 
-const url = `${siteUrl}/exports/${fileName}`;
+const url = `${siteUrl.replace(/\/$/, "")}/exports/${fileName}`;
 
 await updateRenderJob(jobId, {
   status: "completed",
   progress: 100,
+  message: "تم التصدير بنجاح",
   url,
   fileName,
-  message: "تم التصدير بنجاح",
+  durationInSeconds: totalDurationInSeconds,
+  durationInFrames,
+  exportPreset: exportSettings.preset,
+  exportQuality: exportSettings.quality,
+  exportWidth: exportSettings.width,
+  exportHeight: exportSettings.height,
+  exportFps: exportSettings.fps,
   completedAt: new Date().toISOString(),
 });
-
-
-  const siteUrl =
-    incomingSiteUrl ||
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.PUBLIC_SITE_URL ||
-    "http://ec2-56-228-24-131.eu-north-1.compute.amazonaws.com";
-
-  const url = `${siteUrl.replace(/\/$/, "")}/exports/${fileName}`;
-
-  await updateRenderJob(jobId, {
-    status: "completed",
-    progress: 100,
-    message: "تم التصدير بنجاح",
-    url,
-    fileName,
-    durationInSeconds: totalDurationInSeconds,
-    durationInFrames,
-    exportPreset: exportSettings.preset,
-    exportQuality: exportSettings.quality,
-    exportWidth: exportSettings.width,
-    exportHeight: exportSettings.height,
-    exportFps: exportSettings.fps,
-    completedAt: new Date().toISOString(),
-  });
-
   return {
     jobId,
     status: "completed",
