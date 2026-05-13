@@ -1,7 +1,7 @@
 "use client";
 
 import Video from "@/remotion/Video";
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { pickBackgroundFromTopics } from "@/lib/background-themes";
 
 type Reciter = {
@@ -218,7 +218,30 @@ const EXPORT_PRESETS: Array<{
   },
 ];
 
+const PreviewVideo = memo(Video as any);
+
+const FALLBACK_PREVIEW_AYAHS: ReelAyah[] = [
+  {
+    text: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+    audio: "",
+    duration: 5,
+    numberInSurah: 1,
+  },
+];
+
+const PREVIEW_BARS = Array.from({ length: 32 }, (_, index) => ({
+  index,
+  height: 18 + ((index * 17) % 34),
+}));
+
+const SYNC_WAVE_BARS = Array.from({ length: 48 }, (_, index) => ({
+  index,
+  height: 16 + ((index * 19) % 46),
+}));
+
 export default function Home() {
+  const isMobile = useIsMobile();
+
   const [surahs, setSurahs] = useState<Surah[]>([]);
   const [ayahs, setAyahs] = useState<Ayah[]>([]);
   const [reciters, setReciters] = useState<Reciter[]>([]);
@@ -348,17 +371,21 @@ export default function Home() {
     selectedExportPreset.width > selectedExportPreset.height;
   const previewIsSquare =
     selectedExportPreset.width === selectedExportPreset.height;
-  const previewFrameStyle = previewIsLandscape
-    ? {
-        width: "100%",
-        aspectRatio: previewAspectRatio,
-        maxHeight: "100%",
-      }
-    : {
-        height: "100%",
-        aspectRatio: previewAspectRatio,
-        maxWidth: "100%",
-      };
+  const previewFrameStyle = useMemo(
+    () =>
+      previewIsLandscape || isMobile
+        ? {
+            width: "100%",
+            aspectRatio: previewAspectRatio,
+            maxHeight: isMobile ? "72vh" : "100%",
+          }
+        : {
+            height: "100%",
+            aspectRatio: previewAspectRatio,
+            maxWidth: "100%",
+          },
+    [previewAspectRatio, previewIsLandscape, isMobile],
+  );
 
   const [activeTab, setActiveTab] = useState<
     "quran" | "background" | "design" | "labels" | "timing" | "sync" | "export"
@@ -368,25 +395,25 @@ export default function Home() {
     "surah" | "reciter" | "brand"
   >("surah");
 
-  const selectedSurah = surahs.find(
-    (surah) => String(surah.number) === chapter,
+  const selectedSurah = useMemo(
+    () => surahs.find((surah) => String(surah.number) === chapter),
+    [surahs, chapter],
   );
-  const selectedReciter = reciters.find((item) => item.identifier === reciter);
+  const selectedReciter = useMemo(
+    () => reciters.find((item) => item.identifier === reciter),
+    [reciters, reciter],
+  );
   const selectedReciterName =
     selectedReciter?.name || selectedReciter?.englishName || reciter;
 
-  const displaySurahName = cleanSurahName(selectedSurah?.name || "الفاتحة");
-  const previewAyahs =
-    selectedAyahs.length > 0
-      ? selectedAyahs
-      : [
-          {
-            text: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
-            audio: "",
-            duration: 5,
-            numberInSurah: 1,
-          },
-        ];
+  const displaySurahName = useMemo(
+    () => cleanSurahName(selectedSurah?.name || "الفاتحة"),
+    [selectedSurah?.name],
+  );
+  const previewAyahs = useMemo(
+    () => (selectedAyahs.length > 0 ? selectedAyahs : FALLBACK_PREVIEW_AYAHS),
+    [selectedAyahs],
+  );
 
   const previewDurationSeconds = useMemo(() => {
     return Math.max(
@@ -413,9 +440,8 @@ export default function Home() {
     setTapSyncIndex(0);
   }, [currentSyncKey]);
 
-  const PreviewVideo = Video as any;
-
-  const previewInputProps = {
+  const previewInputProps = useMemo(
+    () => ({
     ayahs: previewAyahs,
     textColor,
     textSize: Number(textSize),
@@ -462,8 +488,64 @@ export default function Home() {
     timerPosition,
     progressHeight: Number(progressHeight),
     timerSize: Number(timerSize),
-  };
-
+    exportPreset: selectedExportPreset.id,
+    exportWidth: selectedExportPreset.width,
+    exportHeight: selectedExportPreset.height,
+    exportQuality: selectedExportQuality.id,
+    isRemotionRender: false,
+  }),
+    [
+      previewAyahs,
+      textColor,
+      textSize,
+      fontFamily,
+      backgroundStyle,
+      backgroundVideoUrl,
+      backgroundType,
+      textPosition,
+      animationStyle,
+      wordSpeed,
+      showWordHighlight,
+      wordHighlightColor,
+      wordHighlightGlowColor,
+      wordDimColor,
+      wordHighlightStyle,
+      wordHighlightTransition,
+      wordHighlightSpeed,
+      wordHighlightOffset,
+      wordHighlightHold,
+      wordHighlightMode,
+      manualWordTimings,
+      showSurahName,
+      displaySurahName,
+      surahNameColor,
+      surahNameSize,
+      surahNamePosition,
+      showReciterName,
+      selectedReciterName,
+      reciterNameColor,
+      reciterNameSize,
+      reciterNamePosition,
+      showBrandName,
+      brandName,
+      brandNameColor,
+      brandNameSize,
+      brandNamePosition,
+      brandNameStyle,
+      showProgressBar,
+      showCountdownTimer,
+      progressColor,
+      timerColor,
+      progressPosition,
+      timerPosition,
+      progressHeight,
+      timerSize,
+      selectedExportPreset.id,
+      selectedExportPreset.width,
+      selectedExportPreset.height,
+      selectedExportQuality.id,
+    ],
+  );
   useEffect(() => {
     setPreviewSeekSeconds(0);
     setPreviewPlaying(true);
@@ -1452,42 +1534,49 @@ export default function Home() {
       dir="rtl"
       className="text-white"
       style={{
-        height: "100vh",
-        overflow: "hidden",
-        padding: 12,
+        minHeight: "100dvh",
+        height: isMobile ? "auto" : "100vh",
+        overflowX: "hidden",
+        overflowY: isMobile ? "auto" : "hidden",
+        padding: isMobile ? 8 : 12,
         background: "#020617",
       }}
     >
       <div
         className="mx-auto"
         style={{
-          height: "100%",
+          minHeight: isMobile ? "100dvh" : "100%",
+          height: isMobile ? "auto" : "100%",
           maxWidth: 1920,
-          overflow: "hidden",
+          overflow: isMobile ? "visible" : "hidden",
         }}
       >
         <div
           dir="ltr"
           style={{
-            height: "100%",
+            minHeight: isMobile ? "100dvh" : "100%",
+            height: isMobile ? "auto" : "100%",
             display: "flex",
-            flexDirection: "row",
+            flexDirection: isMobile ? "column" : "row",
             gap: 12,
-            overflow: "hidden",
+            overflow: isMobile ? "visible" : "hidden",
           }}
         >
           <section
             dir="rtl"
             style={{
-              height: "100%",
+              height: isMobile ? "auto" : "100%",
+              minHeight: isMobile ? "58vh" : undefined,
               flex: "1 1 auto",
               minWidth: 0,
               overflow: "hidden",
-              borderRadius: 30,
+              borderRadius: isMobile ? 22 : 30,
               border: "1px solid rgba(255,255,255,0.10)",
               background: "rgba(0,0,0,0.24)",
-              padding: 12,
-              boxShadow: "0 30px 90px rgba(0,0,0,0.45)",
+              padding: isMobile ? 8 : 12,
+              boxShadow: isMobile
+                ? "0 16px 38px rgba(0,0,0,0.36)"
+                : "0 30px 90px rgba(0,0,0,0.45)",
             }}
           >
             <div className="relative flex h-full min-h-0 w-full items-center justify-center overflow-hidden">
@@ -1505,55 +1594,9 @@ export default function Home() {
                   className="relative bg-black"
                 >
                   <PreviewVideo
-                    ayahs={previewAyahs}
-                    textColor={textColor}
-                    textSize={Number(textSize)}
-                    fontFamily={fontFamily}
-                    textPosition={textPosition}
-                    brandNameStyle={brandNameStyle}
-                    backgroundVideoUrl={backgroundVideoUrl}
-                    backgroundType={backgroundType}
-                    showSurahName={showSurahName}
-                    surahName={displaySurahName || "الفاتحة"}
-                    surahNameColor={surahNameColor}
-                    surahNameSize={Number(surahNameSize)}
-                    surahNamePosition={surahNamePosition}
-                    showReciterName={showReciterName}
-                    reciter={selectedReciterName}
-                    reciterNameColor={reciterNameColor}
-                    reciterNameSize={Number(reciterNameSize)}
-                    reciterNamePosition={reciterNamePosition}
-                    showBrandName={showBrandName}
-                    brandName={brandName}
-                    brandNameColor={brandNameColor}
-                    brandNameSize={Number(brandNameSize)}
-                    brandNamePosition={brandNamePosition}
-                    showProgressBar={showProgressBar}
-                    showCountdownTimer={showCountdownTimer}
-                    progressColor={progressColor}
-                    timerColor={timerColor}
-                    progressPosition={progressPosition}
-                    timerPosition={timerPosition}
-                    progressHeight={Number(progressHeight)}
-                    timerSize={Number(timerSize)}
+                    {...previewInputProps}
                     previewPlaying={previewPlaying}
                     previewSeekSeconds={previewSeekSeconds}
-                    showWordHighlight={showWordHighlight}
-                    wordHighlightColor={wordHighlightColor}
-                    wordHighlightGlowColor={wordHighlightGlowColor}
-                    wordDimColor={wordDimColor}
-                    wordHighlightStyle={wordHighlightStyle}
-                    wordHighlightTransition={wordHighlightTransition}
-                    wordHighlightSpeed={Number(wordHighlightSpeed)}
-                    wordHighlightOffset={Number(wordHighlightOffset)}
-                    wordHighlightHold={Number(wordHighlightHold)}
-                    wordHighlightMode={wordHighlightMode}
-                    manualWordTimings={manualWordTimings}
-                    exportPreset={selectedExportPreset.id}
-                    exportWidth={selectedExportPreset.width}
-                    exportHeight={selectedExportPreset.height}
-                    exportQuality={selectedExportQuality.id}
-                    isRemotionRender={false}
                   />
 
                   <div className="pointer-events-none absolute right-4 top-4 z-20 rounded-2xl border border-white/10 bg-black/55 px-3 py-2 text-[11px] font-black text-white backdrop-blur-xl">
@@ -1606,8 +1649,7 @@ export default function Home() {
                     </div>
 
                     <div className="flex items-center gap-1">
-                      {Array.from({ length: 32 }).map((_, index) => {
-                        const height = 18 + ((index * 17) % 34);
+                      {PREVIEW_BARS.map(({ index, height }) => {
                         const active =
                           index / 32 <=
                           previewSeekSeconds /
@@ -1740,18 +1782,18 @@ export default function Home() {
             dir="rtl"
             className="studio-sidebar-scroll"
             style={{
-              height: "calc(100vh - 24px)",
-              maxHeight: "calc(100vh - 24px)",
-              width: 390,
-              flex: "0 0 390px",
+              height: isMobile ? "auto" : "calc(100vh - 24px)",
+              maxHeight: isMobile ? "none" : "calc(100vh - 24px)",
+              width: isMobile ? "100%" : 390,
+              flex: isMobile ? "0 0 auto" : "0 0 390px",
               minWidth: 0,
               minHeight: 0,
               display: "flex",
               flexDirection: "column",
               gap: 12,
-              overflowY: "auto",
+              overflowY: isMobile ? "visible" : "auto",
               overflowX: "hidden",
-              overscrollBehavior: "contain",
+              overscrollBehavior: isMobile ? "auto" : "contain",
               paddingBottom: 12,
             }}
           >
@@ -1763,7 +1805,7 @@ export default function Home() {
                 zIndex: 50,
                 background:
                   "linear-gradient(180deg, rgba(16,24,32,0.98), rgba(8,13,18,0.94))",
-                backdropFilter: "blur(28px)",
+                backdropFilter: isMobile ? "blur(12px)" : "blur(28px)",
               }}
             >
               <div className="mb-4 flex items-center justify-between">
@@ -2595,8 +2637,7 @@ export default function Home() {
 
                       <div className="rounded-[26px] border border-white/10 bg-black/30 p-4">
                         <div className="mb-3 flex items-end gap-1">
-                          {Array.from({ length: 48 }).map((_, index) => {
-                            const height = 16 + ((index * 19) % 46);
+                          {SYNC_WAVE_BARS.map(({ index, height }) => {
                             const active =
                               index / 48 <=
                               previewSeekSeconds /
@@ -3885,6 +3926,25 @@ function formatExportDate(value?: number | string) {
   } catch {
     return "-";
   }
+}
+
+
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const mediaQuery = window.matchMedia("(max-width: 900px)");
+    const update = () => setIsMobile(mediaQuery.matches);
+
+    update();
+    mediaQuery.addEventListener("change", update);
+
+    return () => mediaQuery.removeEventListener("change", update);
+  }, []);
+
+  return isMobile;
 }
 
 function cleanSurahName(name: string) {

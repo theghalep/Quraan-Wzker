@@ -1,5 +1,4 @@
 import path from "path";
-import os from "os";
 import { mkdir, readdir, stat, unlink } from "fs/promises";
 import { Worker } from "bullmq";
 import { redis } from "../lib/queue/redis";
@@ -29,12 +28,14 @@ let cachedRuntimePromise: Promise<{
 const BUNDLE_CACHE_TTL = 1000 * 60 * 60 * 2;
 const MAX_DURATION_SECONDS = 600;
 const EXPORTS_MAX_AGE_MS = 1000 * 60 * 60 * 24;
-const ASSET_CHECK_TIMEOUT_MS = 8000;
-const RENDER_TIMEOUT_MS = 1000 * 60 * 20;
-const DEFAULT_RENDER_CONCURRENCY_RATIO = 0.35;
-const MAX_RENDER_CONCURRENCY = Number(process.env.REMOTION_MAX_RENDER_CONCURRENCY || 1);
-const ASSET_CHECK_CONCURRENCY = Number(process.env.RENDER_ASSET_CHECK_CONCURRENCY || 2);
-const PROGRESS_UPDATE_INTERVAL_MS = 1800;
+const RENDER_TIMEOUT_MS = 1000 * 60 * 25;
+const MAX_RENDER_CONCURRENCY = Number(
+  process.env.REMOTION_MAX_RENDER_CONCURRENCY || 1,
+);
+const ASSET_CHECK_CONCURRENCY = Number(
+  process.env.RENDER_ASSET_CHECK_CONCURRENCY || 2,
+);
+const PROGRESS_UPDATE_INTERVAL_MS = 1500;
 
 new Worker(
   "render-queue",
@@ -52,7 +53,6 @@ new Worker(
       });
 
       console.log("Render completed:", jobId);
-
       return result;
     } catch (error: any) {
       console.error("RENDER_WORKER_ERROR:", error);
@@ -93,7 +93,7 @@ async function renderQuranVideo({
     throw new Error("Missing export settings for render job");
   }
 
-  const exportSettings = incomingExportSettings;
+  const exportSettings = normalizeExportSettings(incomingExportSettings);
 
   const firstAyah = ayahs[0]?.numberInSurah || "start";
   const lastAyah = ayahs[ayahs.length - 1]?.numberInSurah || "end";
@@ -270,13 +270,11 @@ async function renderQuranVideo({
   const exportsDir = path.join(process.cwd(), "public", "exports");
   await mkdir(exportsDir, { recursive: true });
 
-  const safeReciter = sanitizeFileName(body.reciter || "reciter");
-  const safeSurah = sanitizeFileName(body.surahName || "surah");
   const fileId = jobId.slice(0, 8);
   const safePreset = sanitizeFileName(exportSettings.preset || "export");
   const safeQuality = sanitizeFileName(exportSettings.quality || "quality");
 
-const fileName = `quran-reel-ayah-${firstAyah}-to-${lastAyah}-${safePreset}-${safeQuality}-${exportSettings.width}x${exportSettings.height}-${fileId}.mp4`;
+  const fileName = `quran-reel-ayah-${firstAyah}-to-${lastAyah}-${safePreset}-${safeQuality}-${exportSettings.width}x${exportSettings.height}-${fileId}.mp4`;
   const outputLocation = path.join(exportsDir, fileName);
 
   await cleanupOldExports(exportsDir);
@@ -307,7 +305,6 @@ const fileName = `quran-reel-ayah-${firstAyah}-to-${lastAyah}-${safePreset}-${sa
     audioCodec: "aac",
 
     outputLocation,
-
     inputProps,
 
     crf: getRenderCrf(exportSettings.quality, exportSettings.crf),
@@ -326,6 +323,7 @@ const fileName = `quran-reel-ayah-${firstAyah}-to-${lastAyah}-${safePreset}-${sa
       disableWebSecurity: true,
       gl: getChromiumGlBackend(),
       enableMultiProcessOnLinux: false,
+      ignoreCertificateErrors: true,
     },
 
     timeoutInMilliseconds: RENDER_TIMEOUT_MS,
@@ -344,9 +342,7 @@ const fileName = `quran-reel-ayah-${firstAyah}-to-${lastAyah}-${safePreset}-${sa
         progressDelta >= 2 ||
         now - lastProgressUpdateAt >= PROGRESS_UPDATE_INTERVAL_MS;
 
-      if (!shouldUpdate) {
-        return;
-      }
+      if (!shouldUpdate) return;
 
       lastProgressUpdateAt = now;
       lastReportedProgress = totalProgress;
@@ -364,6 +360,8 @@ const fileName = `quran-reel-ayah-${firstAyah}-to-${lastAyah}-${safePreset}-${sa
           progress: totalProgress,
           renderProgress,
           renderConcurrency,
+          quality: exportSettings.quality,
+          scale: getRenderScale(exportSettings),
         }),
       );
     },
@@ -373,7 +371,7 @@ const fileName = `quran-reel-ayah-${firstAyah}-to-${lastAyah}-${safePreset}-${sa
     incomingSiteUrl ||
     process.env.NEXT_PUBLIC_SITE_URL ||
     process.env.PUBLIC_SITE_URL ||
-    "http://ec2-56-228-24-131.eu-north-1.compute.amazonaws.com";
+    "http://ec2-16-171-195-194.eu-north-1.compute.amazonaws.com";
 
   const url = `${siteUrl.replace(/\/$/, "")}/exports/${fileName}`;
 
@@ -433,6 +431,22 @@ async function loadRemotionRuntime() {
   return cachedRuntimePromise;
 }
 
+function normalizeExportSettings(settings: ExportSettings): ExportSettings {
+  const quality = settings.quality || "standard";
+
+  return {
+    ...settings,
+    fps: clampNumber(Math.round(Number(settings.fps || 30)), 24, 30),
+    width: Math.max(Math.round(Number(settings.width || 1080)), 360),
+    height: Math.max(Math.round(Number(settings.height || 1920)), 360),
+    crf: getRenderCrf(quality, Number(settings.crf)),
+    audioBitrate: getAudioBitrate(settings.audioBitrate),
+    renderScale: getRenderScale({
+      ...settings,
+      quality,
+    }),
+  };
+}
 
 async function mapWithConcurrency<T>(
   items: T[],
@@ -450,31 +464,20 @@ async function mapWithConcurrency<T>(
     }
   }
 
-  await Promise.all(
-    Array.from({ length: safeConcurrency }, () => runNext()),
-  );
+  await Promise.all(Array.from({ length: safeConcurrency }, () => runNext()));
 }
 
 function getAssetCheckConcurrency() {
-  if (
-    Number.isFinite(ASSET_CHECK_CONCURRENCY) &&
-    ASSET_CHECK_CONCURRENCY > 0
-  ) {
+  if (Number.isFinite(ASSET_CHECK_CONCURRENCY) && ASSET_CHECK_CONCURRENCY > 0) {
     return Math.max(1, Math.floor(ASSET_CHECK_CONCURRENCY));
   }
 
-  return 4;
+  return 2;
 }
 
-async function assertAssetAvailable(
-  url: string,
-  label: string,
-): Promise<void> {
-  if (!url) {
-    return;
-  }
+async function assertAssetAvailable(url: string, label: string): Promise<void> {
+  if (!url) return;
 
-  // السماح بالملفات المحلية
   if (
     url.startsWith("/") ||
     url.startsWith("file:") ||
@@ -484,12 +487,18 @@ async function assertAssetAvailable(
   }
 
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
     const response = await fetch(url, {
       method: "HEAD",
+      signal: controller.signal,
     });
 
+    clearTimeout(timeout);
+
     if (!response.ok) {
-      throw new Error();
+      throw new Error(`Asset returned ${response.status}`);
     }
   } catch {
     console.warn(`Skipping remote asset validation for ${label}: ${url}`);
@@ -657,9 +666,7 @@ function buildPagedCaptionLinesForRender({
 function splitCaptionPageIntoLinesForRender(
   items: Array<{ word: string; originalIndex: number }>,
 ) {
-  if (items.length <= 4) {
-    return [items];
-  }
+  if (items.length <= 4) return [items];
 
   let bestSplit = Math.ceil(items.length / 2);
   let bestScore = Number.POSITIVE_INFINITY;
@@ -716,7 +723,7 @@ function buildAutoWordStartTimesForRender({
 
 function getRecitationWordWeightForRender(rawWord: string) {
   const word = rawWord || "";
-  const cleanWord = word.replace(/[^؀-ۿa-zA-Z0-9]/g, "");
+  const cleanWord = word.replace(/[^\u0600-\u06FFa-zA-Z0-9]/g, "");
   const letters = cleanWord.length;
   const harakat = (word.match(/[ًٌٍَُِّْٰ]/g) || []).length;
   const maddLetters = (word.match(/[اويىآ]/g) || []).length;
@@ -745,42 +752,40 @@ function getRenderConcurrency() {
   const envConcurrency = Number(process.env.REMOTION_RENDER_CONCURRENCY);
 
   if (Number.isFinite(envConcurrency) && envConcurrency > 0) {
-    return Math.max(1, Math.min(Math.floor(envConcurrency), 1));
+    return Math.max(
+      1,
+      Math.min(Math.floor(envConcurrency), MAX_RENDER_CONCURRENCY, 1),
+    );
   }
 
-  // EC2 CPU/RAM-safe default. Remotion + Chromium + FFmpeg can spike memory
-  // even when average usage looks low, so keep one browser renderer active.
   return 1;
 }
 
-function getRenderScale(exportSettings: ExportSettings) {
+function getRenderScale(exportSettings: Partial<ExportSettings>) {
   const envScale = Number(process.env.REMOTION_RENDER_SCALE);
 
   if (Number.isFinite(envScale) && envScale > 0) {
     return clampNumber(envScale, 0.55, 1);
   }
 
-  if (exportSettings.quality === "draft") return 0.6;
-  if (exportSettings.quality === "standard") return 0.7;
-  if (exportSettings.quality === "ultra") return 0.82;
+  if (exportSettings.quality === "draft") return 0.62;
+  if (exportSettings.quality === "standard") return 0.72;
+  if (exportSettings.quality === "ultra") return 0.9;
 
-  return clampNumber(Number(exportSettings.renderScale || 0.72), 0.65, 0.82);
+  return clampNumber(Number(exportSettings.renderScale || 0.8), 0.7, 0.86);
 }
-
 
 function getRenderCrf(quality: string, incomingCrf: number) {
-  // Higher CRF = smaller/faster/lighter. Keep export stable on small EC2.
-  if (quality === "draft") return 32;
-  if (quality === "standard") return 28;
-  if (quality === "ultra") return 24;
+  if (quality === "draft") return 31;
+  if (quality === "standard") return 27;
+  if (quality === "ultra") return 22;
 
   if (Number.isFinite(incomingCrf)) {
-    return clampNumber(Math.max(Math.round(incomingCrf), 25), 24, 32);
+    return clampNumber(Math.round(incomingCrf), 23, 31);
   }
 
-  return 26;
+  return 25;
 }
-
 
 function getAudioBitrate(incomingAudioBitrate?: string) {
   if (incomingAudioBitrate && /^\d+k$/.test(incomingAudioBitrate)) {
@@ -791,20 +796,20 @@ function getAudioBitrate(incomingAudioBitrate?: string) {
 }
 
 function getJpegQuality(quality: string) {
-  if (quality === "draft") return 68;
-  if (quality === "standard") return 72;
-  if (quality === "ultra") return 80;
+  if (quality === "draft") return 70;
+  if (quality === "standard") return 74;
+  if (quality === "ultra") return 84;
 
-  return 76;
+  return 78;
 }
-
 
 function getX264Preset(quality: string) {
+  if (quality === "draft") return "ultrafast";
+  if (quality === "standard") return "superfast";
   if (quality === "ultra") return "veryfast";
 
-  return "ultrafast";
+  return "superfast";
 }
-
 
 function getChromiumGlBackend() {
   const requestedGl = process.env.REMOTION_CHROMIUM_GL;
