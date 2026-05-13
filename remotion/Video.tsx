@@ -642,13 +642,47 @@ function VideoCanvas({
 }) {
   const IS_LITE_RENDER = isRemotionRender;
 
-  const animationStyleTag = `
-
+  const remotionFontFaceCss = isRemotionRender
+    ? `
 @font-face {
   font-family: "KFGQPC Uthmanic Script HAFS";
   src: url("${staticFile("fonts/KFGQPC Uthmanic Script HAFS.otf")}") format("opentype");
   font-display: swap;
 }
+
+@font-face {
+  font-family: "Amiri Quran";
+  src: url("${staticFile("fonts/ AmiriQuran-Regular.ttf")}") format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Amiri";
+  src: url("${staticFile("fonts/ Amiri-Regular.ttf")}") format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Noto Naskh Arabic";
+  src: url("${staticFile("fonts/ NotoNaskhArabic-Regular.ttf")}") format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Cairo";
+  src: url("${staticFile("fonts/ Cairo-Regular.ttf")}") format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans Arabic";
+  src: url("${staticFile("fonts/ IBMPlexSansArabic-Regular.ttf")}") format("truetype");
+  font-display: swap;
+}
+`
+    : "";
+
+  const animationStyleTag = `
 
 @font-face {
   font-family: "Amiri Quran";
@@ -740,7 +774,7 @@ function VideoCanvas({
 
   return (
     <>
-      <style>{animationStyleTag}</style>
+      <style suppressHydrationWarning>{`${remotionFontFaceCss}${animationStyleTag}`}</style>
 
       <div
         style={{
