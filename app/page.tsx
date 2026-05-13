@@ -392,6 +392,8 @@ export default function Home() {
     useState<ExportQualityId>("high");
 
   const selectedExportPreset = useMemo(() => {
+  const PreviewVideo = Video as any;
+
     return (
       EXPORT_PRESETS.find((preset) => preset.id === selectedExportPresetId) ||
       EXPORT_PRESETS[0]
