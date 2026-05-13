@@ -119,8 +119,7 @@ type TimelineItem = {
 
 const DEFAULT_FPS = 30;
 const BISMILLAH_TEXT = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ";
-const DEFAULT_BISMILLAH_AUDIO =
-  "";
+const DEFAULT_BISMILLAH_AUDIO = staticFile("audio/bismillah.mp3");
 const FALLBACK_AYAH: Ayah = {
   text: BISMILLAH_TEXT,
   audio: "",
@@ -644,6 +643,43 @@ function VideoCanvas({
   const IS_LITE_RENDER = isRemotionRender;
 
   const animationStyleTag = `
+
+@font-face {
+  font-family: "KFGQPC Uthmanic Script HAFS";
+  src: url("${staticFile("fonts/KFGQPC Uthmanic Script HAFS.otf")}") format("opentype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Amiri Quran";
+  src: url("${staticFile("fonts/ AmiriQuran-Regular.ttf")}") format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Amiri";
+  src: url("${staticFile("fonts/ Amiri-Regular.ttf")}") format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Noto Naskh Arabic";
+  src: url("${staticFile("fonts/ NotoNaskhArabic-Regular.ttf")}") format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Cairo";
+  src: url("${staticFile("fonts/ Cairo-Regular.ttf")}") format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans Arabic";
+  src: url("${staticFile("fonts/ IBMPlexSansArabic-Regular.ttf")}") format("truetype");
+  font-display: swap;
+}
+
 @keyframes fadeZoom {
   0% {
     opacity: 0;
@@ -1004,6 +1040,46 @@ function VideoCanvas({
   );
 }
 
+
+function normalizeArabicFontFamily(fontFamily: string) {
+  const normalized = String(fontFamily || "").trim();
+
+  if (
+    normalized === "KFGQPC" ||
+    normalized === "KFGQPC Uthmanic" ||
+    normalized === "KFGQPC Uthmanic Script" ||
+    normalized === "Uthmanic"
+  ) {
+    return "KFGQPC Uthmanic Script HAFS";
+  }
+
+  if (
+    normalized === "AmiriQuran" ||
+    normalized === "Amiri Quran Regular" ||
+    normalized === "Amiri Quran"
+  ) {
+    return "Amiri Quran";
+  }
+
+  if (normalized === "Noto Naskh" || normalized === "Noto Naskh Arabic") {
+    return "Noto Naskh Arabic";
+  }
+
+  if (normalized === "IBM Plex Arabic" || normalized === "IBM Plex Sans Arabic") {
+    return "IBM Plex Sans Arabic";
+  }
+
+  if (normalized === "Cairo") {
+    return "Cairo";
+  }
+
+  if (normalized === "Amiri") {
+    return "Amiri";
+  }
+
+  return "KFGQPC Uthmanic Script HAFS";
+}
+
 function FloatingText({
   text,
   color,
@@ -1264,6 +1340,8 @@ function AnimatedText({
       lines: [words.map((word, index) => ({ word, originalIndex: index }))],
     };
 
+  const resolvedFontFamily = normalizeArabicFontFamily(fontFamily);
+
   const baseStyle: React.CSSProperties = {
     color,
     fontSize: safeSize,
@@ -1274,7 +1352,7 @@ function AnimatedText({
       : "0 1px 4px rgba(0,0,0,0.9)",
     direction: "rtl",
     unicodeBidi: "plaintext",
-    fontFamily: `"${fontFamily}", "KFGQPC Uthmanic Script HAFS", "Amiri Quran", "Noto Naskh Arabic", "Amiri", serif`,
+    fontFamily: `"${resolvedFontFamily}", "KFGQPC Uthmanic Script HAFS", "Amiri Quran", "Noto Naskh Arabic", "Amiri", serif`,
     fontKerning: "normal",
     fontVariantLigatures: "common-ligatures",
     fontFeatureSettings: '"liga" 1, "calt" 1, "kern" 1',
@@ -1531,7 +1609,7 @@ function createBismillahIntro({
 }): Ayah {
   return {
     text: BISMILLAH_TEXT,
-    audio: bismillahAudioUrl || "",
+    audio: bismillahAudioUrl || DEFAULT_BISMILLAH_AUDIO,
     duration: Math.max(Number(bismillahDuration || 3.2), 1.8),
     numberInSurah: undefined,
     __isBismillahIntro: true,

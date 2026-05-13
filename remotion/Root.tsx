@@ -1,4 +1,4 @@
-import { Composition, registerRoot } from "remotion";
+import { Composition, registerRoot, staticFile } from "remotion";
 import Video from "./Video";
 
 const FPS = 30;
@@ -121,7 +121,7 @@ const defaultProps: QuranReelProps = {
   manualWordTimings: {},
 
   showBismillahIntro: true,
-bismillahAudioUrl: "",
+  bismillahAudioUrl: staticFile("audio/bismillah.mp3"),
   bismillahDuration: 3.2,
 
   showSurahName: true,

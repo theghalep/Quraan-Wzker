@@ -1,5 +1,43 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: "KFGQPC Uthmanic Script HAFS";
+  src: url("/fonts/KFGQPC%20Uthmanic%20Script%20HAFS.otf") format("opentype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Amiri Quran";
+  src: url("/fonts/%20AmiriQuran-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Amiri";
+  src: url("/fonts/%20Amiri-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Noto Naskh Arabic";
+  src: url("/fonts/%20NotoNaskhArabic-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Cairo";
+  src: url("/fonts/%20Cairo-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans Arabic";
+  src: url("/fonts/%20IBMPlexSansArabic-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+
+
+
 :root {
   --background: #030712;
   --foreground: #f8fafc;
@@ -44,7 +82,7 @@ body {
     ),
     linear-gradient(135deg, #020617 0%, #050505 50%, #020617 100%);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "IBM Plex Sans Arabic", "Noto Naskh Arabic", Arial, Helvetica, sans-serif;
 }
 
 .glass-card {
