@@ -37,6 +37,9 @@ const ASSET_CHECK_CONCURRENCY = Number(
 );
 const PROGRESS_UPDATE_INTERVAL_MS = 1500;
 const SAFE_RENDER_SCALES = [1, 0.75, 0.5] as const;
+const DEFAULT_RENDER_FONT_FAMILY = "KFGQPC Uthmanic Script HAFS";
+const DEFAULT_BISMILLAH_DURATION_SECONDS = 3.2;
+const BISMILLAH_TEXT = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ";
 
 new Worker(
   "render-queue",
@@ -104,6 +107,20 @@ async function renderQuranVideo({
   const firstAyah = ayahs[0]?.numberInSurah || "start";
   const lastAyah = ayahs[ayahs.length - 1]?.numberInSurah || "end";
 
+  const siteUrl =
+    incomingSiteUrl ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.PUBLIC_SITE_URL ||
+    "http://ec2-16-171-195-194.eu-north-1.compute.amazonaws.com";
+
+  const publicSiteUrl = siteUrl.replace(/\/$/, "");
+  const bismillahAudioUrl = `${publicSiteUrl}/audio/bismillah.mp3`;
+  const bismillahDuration = Math.max(
+    Number(body.bismillahDuration || DEFAULT_BISMILLAH_DURATION_SECONDS),
+    1.8,
+  );
+  const showBismillahIntro = body.showBismillahIntro !== false;
+
   await updateRenderJob(jobId, {
     status: "validating",
     progress: 5,
@@ -120,6 +137,10 @@ async function renderQuranVideo({
 
   await assertAssetAvailable(body.backgroundVideoUrl, "الخلفية");
 
+  if (showBismillahIntro) {
+    await assertAssetAvailable(bismillahAudioUrl, "صوت البسملة");
+  }
+
   const audioAssets: Array<{ url: string; label: string }> = ayahs
     .map((ayah: any, index: number) => ({
       url: String(ayah.audio || ""),
@@ -135,10 +156,11 @@ async function renderQuranVideo({
     },
   );
 
-  const totalDurationInSeconds = ayahs.reduce(
-    (total: number, ayah: any) => total + Number(ayah.duration || 5),
-    0,
-  );
+  const totalDurationInSeconds = getDurationSecondsWithBismillahIntro({
+    ayahs,
+    showBismillahIntro,
+    bismillahDuration,
+  });
 
   if (totalDurationInSeconds > MAX_DURATION_SECONDS) {
     throw new Error("مدة الفيديو طويلة جدًا. الحد الحالي 10 دقائق.");
@@ -165,7 +187,7 @@ async function renderQuranVideo({
 
     textColor: body.textColor || "#ffffff",
     textSize: Number(body.textSize || 72),
-    fontFamily: body.fontFamily || "Amiri",
+    fontFamily: normalizeRenderFontFamily(body.fontFamily),
 
     backgroundStyle: body.backgroundStyle || "emerald",
     backgroundVideoUrl: body.backgroundVideoUrl,
@@ -188,6 +210,10 @@ async function renderQuranVideo({
     wordHighlightHold: Number(body.wordHighlightHold || 0.12),
     wordHighlightMode: body.wordHighlightMode || "smart",
     manualWordTimings: body.manualWordTimings || {},
+
+    showBismillahIntro,
+    bismillahAudioUrl,
+    bismillahDuration,
 
     showSurahName: body.showSurahName ?? true,
     surahName: body.surahName || "",
@@ -394,14 +420,8 @@ async function renderQuranVideo({
     },
   });
 
-  const siteUrl =
-    incomingSiteUrl ||
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.PUBLIC_SITE_URL ||
-    "http://ec2-16-171-195-194.eu-north-1.compute.amazonaws.com";
-
   const encodedFileName = encodeURIComponent(fileName);
-  const url = `${siteUrl.replace(/\/$/, "")}/exports/${encodedFileName}`;
+  const url = `${publicSiteUrl}/exports/${encodedFileName}`;
 
   await updateRenderJob(jobId, {
     status: "completed",
@@ -536,6 +556,113 @@ async function assertAssetAvailable(url: string, label: string): Promise<void> {
     console.warn(`Skipping remote asset validation for ${label}: ${url}`);
   }
 }
+
+
+function getDurationSecondsWithBismillahIntro({
+  ayahs,
+  showBismillahIntro,
+  bismillahDuration,
+}: {
+  ayahs: Array<{ text?: string; duration?: number }>;
+  showBismillahIntro: boolean;
+  bismillahDuration: number;
+}) {
+  const rawDurationSeconds = ayahs.reduce((total: number, ayah: any) => {
+    return total + Math.max(Number(ayah.duration || 5), 0.1);
+  }, 0);
+
+  if (!showBismillahIntro) {
+    return rawDurationSeconds;
+  }
+
+  const introDuration = Math.max(
+    Number(bismillahDuration || DEFAULT_BISMILLAH_DURATION_SECONDS),
+    1.8,
+  );
+
+  const firstText = ayahs[0]?.text || "";
+
+  if (!firstText) {
+    return introDuration;
+  }
+
+  if (isBismillahOnly(firstText)) {
+    const restDuration = ayahs.slice(1).reduce((total: number, ayah: any) => {
+      return total + Math.max(Number(ayah.duration || 5), 0.1);
+    }, 0);
+
+    return introDuration + restDuration;
+  }
+
+  if (startsWithBismillah(firstText)) {
+    return rawDurationSeconds;
+  }
+
+  return rawDurationSeconds + introDuration;
+}
+
+function isBismillahOnly(text: string) {
+  return normalizeArabicForBismillah(text) === normalizeArabicForBismillah(BISMILLAH_TEXT);
+}
+
+function startsWithBismillah(text: string) {
+  return normalizeArabicForBismillah(text).startsWith(
+    normalizeArabicForBismillah(BISMILLAH_TEXT),
+  );
+}
+
+function normalizeArabicForBismillah(value: string) {
+  return String(value || "")
+    .replace(/﷽/g, "بسم الله الرحمن الرحيم")
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, "")
+    .replace(/[\u06D6-\u06ED۝۞]/g, "")
+    .replace(/[إأآٱا]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه")
+    .replace(/[^\u0600-\u06FF]/g, "")
+    .trim();
+}
+
+function normalizeRenderFontFamily(fontFamily?: string) {
+  const value = String(fontFamily || "").trim();
+
+  if (
+    value === "KFGQPC" ||
+    value === "KFGQPC Uthmanic" ||
+    value === "KFGQPC Uthmanic Script" ||
+    value === "KFGQPC Uthmanic Script HAFS" ||
+    value === "Uthmanic"
+  ) {
+    return "KFGQPC Uthmanic Script HAFS";
+  }
+
+  if (
+    value === "AmiriQuran" ||
+    value === "Amiri Quran" ||
+    value === "Amiri Quran Regular"
+  ) {
+    return "Amiri Quran";
+  }
+
+  if (value === "Noto Naskh" || value === "Noto Naskh Arabic") {
+    return "Noto Naskh Arabic";
+  }
+
+  if (value === "IBM Plex Arabic" || value === "IBM Plex Sans Arabic") {
+    return "IBM Plex Sans Arabic";
+  }
+
+  if (value === "Cairo") {
+    return "Cairo";
+  }
+
+  if (value === "Amiri") {
+    return "Amiri";
+  }
+
+  return DEFAULT_RENDER_FONT_FAMILY;
+}
+
 
 type PreprocessAyah = {
   text: string;
