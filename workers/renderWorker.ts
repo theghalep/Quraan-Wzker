@@ -277,10 +277,31 @@ async function renderQuranVideo({
   await mkdir(exportsDir, { recursive: true });
 
   const fileId = jobId.slice(0, 8);
-  const safePreset = sanitizeFileName(exportSettings.preset || "export");
-  const safeQuality = sanitizeFileName(exportSettings.quality || "quality");
 
-  const fileName = `quran-reel-ayah-${firstAyah}-to-${lastAyah}-${safePreset}-${safeQuality}-${exportSettings.width}x${exportSettings.height}-${fileId}.mp4`;
+  const safePreset = sanitizeFileName(
+    exportSettings.preset || "export",
+  );
+
+  const safeQuality = sanitizeFileName(
+    exportSettings.quality || "quality",
+  );
+
+  const safeSurahName = sanitizeFileName(
+    body.surahName || "surah",
+  );
+
+  const safeReciter = sanitizeFileName(
+    body.reciter || "reciter",
+  );
+
+  const fileName =
+    `${safeReciter}-` +
+    `${safeSurahName}-` +
+    `ayah-${firstAyah}-to-${lastAyah}-` +
+    `${safePreset}-` +
+    `${safeQuality}-` +
+    `${exportSettings.width}x${exportSettings.height}-` +
+    `${fileId}.mp4`;
   const outputLocation = path.join(exportsDir, fileName);
 
   await cleanupOldExports(exportsDir);
