@@ -127,6 +127,56 @@ const FALLBACK_AYAH: Ayah = {
   numberInSurah: 1,
 };
 
+const QURAN_FONT_FACE_CSS = `
+@font-face {
+  font-family: "KFGQPC Uthmanic Script HAFS";
+  src: url("${staticFile("fonts/KFGQPC Uthmanic Script HAFS.otf")}") format("opentype");
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Amiri Quran";
+  src: url("${staticFile("fonts/AmiriQuran-Regular.ttf")}") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Amiri";
+  src: url("${staticFile("fonts/Amiri-Regular.ttf")}") format("truetype");
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Noto Naskh Arabic";
+  src: url("${staticFile("fonts/NotoNaskhArabic-Regular.ttf")}") format("truetype");
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Cairo";
+  src: url("${staticFile("fonts/Cairo-Regular.ttf")}") format("truetype");
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans Arabic";
+  src: url("${staticFile("fonts/IBMPlexSansArabic-Regular.ttf")}") format("truetype");
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: block;
+}
+`;
+
 export default function Video(props: Props) {
   if (props.isRemotionRender) {
     return <RemotionVideo {...props} />;
@@ -383,7 +433,7 @@ function useNormalizedProps({
   ayahs = [],
   textColor = "#ffffff",
   textSize = 72,
-  fontFamily = "KFGQPC Uthmanic Script HAFS",
+  fontFamily = "Amiri Quran",
   backgroundVideoUrl = "",
   backgroundType = "video",
   exportPreset = "reels",
@@ -642,77 +692,7 @@ function VideoCanvas({
 }) {
   const IS_LITE_RENDER = isRemotionRender;
 
-  const remotionFontFaceCss = isRemotionRender
-    ? `
-@font-face {
-  font-family: "KFGQPC Uthmanic Script HAFS";
-  src: url("${staticFile("fonts/KFGQPC Uthmanic Script HAFS.otf")}") format("opentype");
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Amiri Quran";
-  src: url("${staticFile("fonts/ AmiriQuran-Regular.ttf")}") format("truetype");
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Amiri";
-  src: url("${staticFile("fonts/ Amiri-Regular.ttf")}") format("truetype");
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Noto Naskh Arabic";
-  src: url("${staticFile("fonts/ NotoNaskhArabic-Regular.ttf")}") format("truetype");
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Cairo";
-  src: url("${staticFile("fonts/ Cairo-Regular.ttf")}") format("truetype");
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "IBM Plex Sans Arabic";
-  src: url("${staticFile("fonts/ IBMPlexSansArabic-Regular.ttf")}") format("truetype");
-  font-display: swap;
-}
-`
-    : "";
-
   const animationStyleTag = `
-
-@font-face {
-  font-family: "Amiri Quran";
-  src: url("${staticFile("fonts/ AmiriQuran-Regular.ttf")}") format("truetype");
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Amiri";
-  src: url("${staticFile("fonts/ Amiri-Regular.ttf")}") format("truetype");
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Noto Naskh Arabic";
-  src: url("${staticFile("fonts/ NotoNaskhArabic-Regular.ttf")}") format("truetype");
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Cairo";
-  src: url("${staticFile("fonts/ Cairo-Regular.ttf")}") format("truetype");
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "IBM Plex Sans Arabic";
-  src: url("${staticFile("fonts/ IBMPlexSansArabic-Regular.ttf")}") format("truetype");
-  font-display: swap;
-}
 
 @keyframes fadeZoom {
   0% {
@@ -774,7 +754,7 @@ function VideoCanvas({
 
   return (
     <>
-      <style suppressHydrationWarning>{`${remotionFontFaceCss}${animationStyleTag}`}</style>
+      <style suppressHydrationWarning>{`${QURAN_FONT_FACE_CSS}${animationStyleTag}`}</style>
 
       <div
         style={{
@@ -784,6 +764,7 @@ function VideoCanvas({
           overflow: "hidden",
           background: "#000",
           direction: "rtl",
+          unicodeBidi: "plaintext",
         }}
       >
         {backgroundVideoUrl ? (
@@ -817,6 +798,7 @@ function VideoCanvas({
             <OffthreadVideo
               src={backgroundVideoUrl}
               muted
+              loop
               playbackRate={0.9}
               style={{
                 position: "absolute",
@@ -833,6 +815,7 @@ function VideoCanvas({
               key={backgroundVideoUrl}
               src={backgroundVideoUrl}
               muted
+              loop
               playsInline
               preload="auto"
               style={{
@@ -955,31 +938,28 @@ function VideoCanvas({
             padding: `0 ${captionLayout.sidePadding}px`,
             textAlign: "center",
             animation: IS_LITE_RENDER ? "none" : ayahAnimation,
+            pointerEvents: "none",
           }}
         >
           <div
             style={{
               color: textColor,
-              fontSize: Math.max(captionLayout.fontSize * 0.42, 16),
-              fontWeight: "bold",
+              fontSize: captionLayout.fontSize,
+              fontWeight: 800,
               lineHeight: captionLayout.lineHeight,
-              textShadow: isRemotionRender
-                ? "0 0 10px rgba(0,0,0,0.9)"
-                : "0 0 12px rgba(0,0,0,0.98)",
-              background: isRemotionRender
-                ? "rgba(0,0,0,0.30)"
-                : "rgba(0,0,0,0.36)",
-              borderRadius: 38,
-              padding: `${captionLayout.paddingY + 22}px ${captionLayout.paddingX + 28}px`,
-              border: "1px solid rgba(255,255,255,0.10)",
-              boxShadow: isRemotionRender
-                ? "0 6px 16px rgba(0,0,0,0.18)"
-                : "0 10px 24px rgba(0,0,0,0.22)",
-              width: isLandscapeExport ? "88%" : isSquareExport ? "86%" : "82%",
+              textShadow: "none",
+              background: "transparent",
+              borderRadius: 0,
+              padding: 0,
+              margin: 0,
+              border: "none",
+              boxShadow: "none",
+              width: "100%",
               maxWidth: captionLayout.maxWidth,
-              minWidth: isLandscapeExport ? "56%" : "60%",
+              minWidth: "0",
               overflow: "visible",
-              backdropFilter: IS_LITE_RENDER ? "none" : "blur(10px)",
+              backdropFilter: "none",
+              filter: "none",
             }}
           >
             <AnimatedText
@@ -1082,9 +1062,10 @@ function normalizeArabicFontFamily(fontFamily: string) {
     normalized === "KFGQPC" ||
     normalized === "KFGQPC Uthmanic" ||
     normalized === "KFGQPC Uthmanic Script" ||
+    normalized === "KFGQPC Uthmanic Script HAFS" ||
     normalized === "Uthmanic"
   ) {
-    return "KFGQPC Uthmanic Script HAFS";
+    return "Amiri Quran";
   }
 
   if (
@@ -1111,7 +1092,7 @@ function normalizeArabicFontFamily(fontFamily: string) {
     return "Amiri";
   }
 
-  return "KFGQPC Uthmanic Script HAFS";
+  return "Amiri Quran";
 }
 
 function FloatingText({
@@ -1196,37 +1177,88 @@ function getOpticalCaptionLayout({
 
   const referenceWidth = 1080;
   const referenceHeight = 1920;
-
   const physicalScale = Math.min(
     safeWidth / referenceWidth,
     safeHeight / referenceHeight,
   );
 
-  const opticalScale = Math.pow(clampNumber(physicalScale, 0.52, 1.55), 0.3);
-  const userScale = clampNumber(requestedTextSize / 72, 0.72, 1.08);
+  const minDimension = Math.min(safeWidth, safeHeight);
+  const opticalScale = Math.pow(clampNumber(physicalScale, 0.52, 1.55), 0.12);
+  const userScale = clampNumber(Number(requestedTextSize || 82) / 82, 0.92, 1.34);
 
-  // Vertical captions must stay elegant and horizontal, not huge stacked words.
-  const baseFont = isLandscape ? 70 : isSquare ? 58 : 50;
+  // The visible ayah box is intentionally almost the full video width.
+  // Font size is large, but constrained so words do not explode into stacked letters.
+  const baseFont = isLandscape
+    ? minDimension * 0.175
+    : isSquare
+      ? minDimension * 0.145
+      : safeWidth * 0.145;
 
   const fontSize = clampNumber(
     baseFont * opticalScale * userScale,
-    isLandscape ? 38 : isSquare ? 32 : 34,
-    isLandscape ? 70 : isSquare ? 52 : 46,
+    isLandscape ? 86 : isSquare ? 82 : 96,
+    isLandscape ? 184 : isSquare ? 168 : 178,
   );
 
   return {
     fontSize,
-    maxWidth: isLandscape ? "94%" : isSquare ? "90%" : "88%",
-    lineHeight: isLandscape ? 1.62 : isSquare ? 1.72 : 1.86,
-    sidePadding: isLandscape
-      ? Math.round(safeWidth * 0.035)
-      : Math.round(safeWidth * 0.055),
-    paddingX: isLandscape ? 22 : isSquare ? 24 : 28,
-    paddingY: isLandscape ? 12 : isSquare ? 16 : 18,
-    borderRadius: isLandscape ? 28 : 34,
+    maxWidth: "100%",
+lineHeight: isLandscape ? 1.48 : isSquare ? 1.52 : 1.6,
+    // Real full-width text. No visual card, no blur, no big padded wrapper.
+    sidePadding: Math.round(safeWidth * (isLandscape ? 0.025 : 0.035)),
+    paddingX: 0,
+    paddingY: 0,
+    borderRadius: 0,
     isLandscape,
     isSquare,
   };
+}
+
+
+function getAutoFitQuranFontSize({
+  text,
+  requestedSize,
+  isLandscape = false,
+  isSquare = false,
+}: {
+  text: string;
+  requestedSize: number;
+  isLandscape?: boolean;
+  isSquare?: boolean;
+}) {
+  const cleanText = String(text || "").trim();
+  const words = splitArabicWords(cleanText);
+  const characterCount = cleanText.replace(/\s+/g, "").length;
+  const wordCount = words.length;
+
+  const minSize = isLandscape ? 78 : isSquare ? 76 : 86;
+  const maxSize = isLandscape ? 184 : isSquare ? 168 : 178;
+
+  let targetSize = clampNumber(requestedSize, minSize, maxSize);
+
+  // Short ayahs should look cinematic and large.
+  // Longer ayahs are reduced gradually, never by the wrapper/padding.
+  if (isLandscape) {
+    if (characterCount <= 18 && wordCount <= 4) targetSize = Math.max(targetSize, 174);
+    else if (characterCount <= 34 && wordCount <= 6) targetSize = Math.max(targetSize, 154);
+    else if (characterCount <= 62) targetSize = Math.max(targetSize, 128);
+    else if (characterCount <= 100) targetSize = Math.min(targetSize, 108);
+    else targetSize = Math.min(targetSize, 92);
+  } else if (isSquare) {
+    if (characterCount <= 18 && wordCount <= 4) targetSize = Math.max(targetSize, 156);
+    else if (characterCount <= 34 && wordCount <= 6) targetSize = Math.max(targetSize, 138);
+    else if (characterCount <= 62) targetSize = Math.max(targetSize, 112);
+    else if (characterCount <= 100) targetSize = Math.min(targetSize, 96);
+    else targetSize = Math.min(targetSize, 84);
+  } else {
+    if (characterCount <= 18 && wordCount <= 4) targetSize = Math.max(targetSize, 170);
+    else if (characterCount <= 34 && wordCount <= 6) targetSize = Math.max(targetSize, 148);
+    else if (characterCount <= 62) targetSize = Math.max(targetSize, 122);
+    else if (characterCount <= 100) targetSize = Math.min(targetSize, 104);
+    else targetSize = Math.min(targetSize, 90);
+  }
+
+  return clampNumber(targetSize, minSize, maxSize);
 }
 
 function AnimatedText({
@@ -1278,7 +1310,12 @@ function AnimatedText({
   isSquareCaption?: boolean;
   isRemotionRender?: boolean;
 }) {
-  const safeSize = Math.min(Math.max(size, 24), isLandscapeCaption ? 64 : isSquareCaption ? 52 : 46);
+  const safeSize = getAutoFitQuranFontSize({
+    text,
+    requestedSize: size,
+    isLandscape: isLandscapeCaption,
+    isSquare: isSquareCaption,
+  });
   const hasManualTimings = manualTimings.some(
     (time) => typeof time === "number" && Number.isFinite(time),
   );
@@ -1308,24 +1345,20 @@ function AnimatedText({
   );
 
   const captionPages = useMemo(() => {
-    if (canUsePreparedData && preparedData?.captionPages?.length) {
-      return preparedData.captionPages;
-    }
-
-    return buildPagedCaptionLines({
-      words,
-      fontSize: safeSize,
-      isLandscape: isLandscapeCaption,
-      isSquare: isSquareCaption,
-    });
-  }, [
-    canUsePreparedData,
-    preparedData,
-    words,
-    safeSize,
-    isLandscapeCaption,
-    isSquareCaption,
-  ]);
+    // Always render the whole ayah at once. We intentionally ignore prepared
+    // paged captions here because the final video must show the complete ayah
+    // with its number, not a moving fragment of the verse.
+    return [
+      {
+        lines: buildFullAyahCaptionLines({
+          words,
+          fontSize: safeSize,
+          isLandscape: isLandscapeCaption,
+          isSquare: isSquareCaption,
+        }),
+      },
+    ];
+  }, [words, safeSize, isLandscapeCaption, isSquareCaption]);
 
   const wordStartTimes = useMemo(() => {
     if (
@@ -1380,10 +1413,10 @@ function AnimatedText({
     color,
     fontSize: safeSize,
     fontWeight: 800,
-    lineHeight: isLandscapeCaption ? 1.9 : isSquareCaption ? 2.02 : 2.15,
+    lineHeight: isLandscapeCaption ? 1.48 : isSquareCaption ? 1.52 : 1.6,
     textShadow: isRemotionRender
-      ? "0 2px 5px rgba(0,0,0,0.95)"
-      : "0 1px 4px rgba(0,0,0,0.9)",
+      ? "0 3px 7px rgba(0,0,0,0.95)"
+      : "0 3px 9px rgba(0,0,0,0.96)",
     direction: "rtl",
     unicodeBidi: "plaintext",
     fontFamily: `"${resolvedFontFamily}", "KFGQPC Uthmanic Script HAFS", "Amiri Quran", "Noto Naskh Arabic", "Amiri", serif`,
@@ -1394,12 +1427,19 @@ function AnimatedText({
     WebkitFontSmoothing: "antialiased",
     MozOsxFontSmoothing: "grayscale",
     textAlign: "center",
+    textWrap: "balance" as any,
     whiteSpace: "normal",
     wordBreak: "normal",
-    wordSpacing: isLandscapeCaption ? "0.10em" : "0.12em",
+    wordSpacing: isLandscapeCaption ? "0.01em" : "0.012em",
     overflowWrap: "normal",
     maxWidth: "100%",
+    width: "100%",
     letterSpacing: "0",
+    background: "transparent",
+    border: "none",
+    boxShadow: "none",
+    filter: "none",
+    backdropFilter: "none",
     animation:
       animationStyle === "glow" && !isRemotionRender
         ? undefined
@@ -1407,7 +1447,30 @@ function AnimatedText({
   };
 
   if (!showWordHighlight || words.length <= 1) {
-    return <div style={baseStyle}>{text}</div>;
+    return (
+      <div style={baseStyle}>
+        {text}
+        {ayahNumber && (
+          <span
+            style={{
+              display: "inline-block",
+              marginInlineStart: Math.max(safeSize * 0.14, 7),
+              fontSize: Math.max(safeSize * 0.38, 14),
+              fontWeight: 900,
+              lineHeight: 1,
+              color: "rgba(255,255,255,0.96)",
+              textShadow: isRemotionRender
+                ? "0 1px 3px rgba(0,0,0,0.84)"
+                : "0 1px 5px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.45)",
+              verticalAlign: "-0.02em",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {` ﴿${toArabicNumbers(ayahNumber)}﴾`}
+          </span>
+        )}
+      </div>
+    );
   }
 
   return (
@@ -1418,6 +1481,7 @@ function AnimatedText({
           style={{
             display: "block",
             whiteSpace: "normal",
+            textWrap: "balance" as any,
             maxWidth: "100%",
             overflow: "visible",
             marginBlock: isLandscapeCaption ? "0.02em" : "0.04em",
@@ -1479,6 +1543,70 @@ function AnimatedText({
   );
 }
 
+function buildFullAyahCaptionLines({
+  words,
+  fontSize,
+  isLandscape = false,
+  isSquare = false,
+}: {
+  words: string[];
+  fontSize: number;
+  isLandscape?: boolean;
+  isSquare?: boolean;
+}) {
+  const items = words.map((word, index) => ({ word, originalIndex: index }));
+  const totalChars = words.join(" ").length;
+
+  // Keep short and medium ayahs together as much as possible.
+  // The transparent full-width layout gives the text real room now.
+  if (items.length <= 6 || totalChars <= (isLandscape ? 70 : isSquare ? 48 : 42)) {
+    return [items];
+  }
+
+  const charsPerLine = isLandscape
+    ? clampNumber(fontSize * 4.8, 210, 520)
+    : isSquare
+      ? clampNumber(fontSize * 3.65, 150, 330)
+      : clampNumber(fontSize * 3.2, 135, 285);
+
+  const preferredLineCount = clampNumber(
+    Math.ceil(totalChars / charsPerLine),
+    1,
+    2,
+  );
+
+  const lineCount = Math.min(Math.max(preferredLineCount, 1), items.length);
+  const targetCharsPerLine = Math.ceil(totalChars / lineCount);
+  const lines: Array<Array<{ word: string; originalIndex: number }>> = [];
+  let currentLine: Array<{ word: string; originalIndex: number }> = [];
+  let currentLength = 0;
+
+  items.forEach((item) => {
+    const nextLength = currentLength + item.word.length + (currentLine.length ? 1 : 0);
+    const remainingLines = lineCount - lines.length - 1;
+    const remainingWordsAfterThis = items.length - item.originalIndex - 1;
+    const canStartNewLine =
+      currentLine.length > 1 &&
+      lines.length < lineCount - 1 &&
+      remainingWordsAfterThis >= remainingLines;
+
+    if (canStartNewLine && nextLength > targetCharsPerLine * 1.12) {
+      lines.push(currentLine);
+      currentLine = [];
+      currentLength = 0;
+    }
+
+    currentLine.push(item);
+    currentLength += item.word.length + (currentLine.length > 1 ? 1 : 0);
+  });
+
+  if (currentLine.length) {
+    lines.push(currentLine);
+  }
+
+  return lines;
+}
+
 function buildPagedCaptionLines({
   words,
   fontSize,
@@ -1492,47 +1620,16 @@ function buildPagedCaptionLines({
 }) {
   if (!words.length) return [];
 
-  const maxWordsPerPage = isLandscape ? 14 : isSquare ? 7 : 5;
-  const targetCharsPerPage = isLandscape
-    ? clampNumber(Math.round(fontSize * 2.4), 72, 130)
-    : isSquare
-      ? clampNumber(Math.round(fontSize * 1.7), 42, 74)
-      : clampNumber(Math.round(fontSize * 1.28), 26, 48);
-
-  const pages: Array<{
-    lines: Array<Array<{ word: string; originalIndex: number }>>;
-  }> = [];
-
-  let pageItems: Array<{ word: string; originalIndex: number }> = [];
-  let pageLength = 0;
-
-  words.forEach((word, index) => {
-    const nextLength = pageLength + word.length + (pageItems.length ? 1 : 0);
-
-    const shouldStartNewPage =
-      pageItems.length >= 3 &&
-      (nextLength > targetCharsPerPage || pageItems.length >= maxWordsPerPage);
-
-    if (shouldStartNewPage) {
-      pages.push({
-        lines: splitCaptionPageIntoLines(pageItems),
-      });
-
-      pageItems = [];
-      pageLength = 0;
-    }
-
-    pageItems.push({ word, originalIndex: index });
-    pageLength += word.length + (pageItems.length > 1 ? 1 : 0);
-  });
-
-  if (pageItems.length) {
-    pages.push({
-      lines: splitCaptionPageIntoLines(pageItems),
-    });
-  }
-
-  return pages;
+  return [
+    {
+      lines: buildFullAyahCaptionLines({
+        words,
+        fontSize,
+        isLandscape,
+        isSquare,
+      }),
+    },
+  ];
 }
 
 function splitCaptionPageIntoLines(
@@ -1927,18 +2024,21 @@ function getHighlightedWordStyle({
 }) {
   const base: React.CSSProperties = {
     display: "inline",
-    margin: "0 0.08em",
-    padding: "0 0.06em",
-    borderRadius: 14,
+    margin: "0",
+    padding: "0",
+    borderRadius: 0,
     color: isPrevious ? color : dimColor,
     opacity: 1,
     transition: isRemotionRender
       ? "none"
       : `color ${Math.max(0.12, hold + 0.16)}s ease, text-shadow ${Math.max(0.12, hold + 0.16)}s ease`,
     transform: "none",
+    background: "transparent",
+    border: "none",
+    boxShadow: "none",
     textShadow: isRemotionRender
       ? "0 2px 5px rgba(0,0,0,0.92)"
-      : "0 3px 14px rgba(0,0,0,0.98)",
+      : "0 3px 12px rgba(0,0,0,0.98)",
   };
 
   if (!isActive) {
@@ -1959,24 +2059,15 @@ function getHighlightedWordStyle({
         : `0 0 14px ${highlightGlowColor}, 0 0 12px rgba(0,0,0,.98)`,
   };
 
-  if (highlightStyle === "pill") {
-    active.background = `${highlightColor}26`;
-    active.border = `1px solid ${highlightColor}66`;
-    active.boxShadow = isRemotionRender
-      ? "none"
-      : `0 0 22px ${highlightGlowColor}66`;
-  }
-
+  // No background panels behind highlighted words. Color/glow only.
   if (highlightStyle === "underline") {
-    active.borderBottom = `4px solid ${highlightColor}`;
-    active.borderRadius = 6;
+    active.borderBottom = `0.08em solid ${highlightColor}`;
+    active.borderRadius = 0;
   }
 
-  if (highlightStyle === "gold") {
-    active.background = "transparent";
-    active.border = "none";
-    active.boxShadow = "none";
-  }
+  active.background = "transparent";
+  active.border = highlightStyle === "underline" ? active.border : "none";
+  active.boxShadow = "none";
 
   return active;
 }

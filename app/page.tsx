@@ -296,8 +296,8 @@ export default function Home() {
   const [exporting, setExporting] = useState(false);
 
   const [textColor, setTextColor] = useState("#ffffff");
-  const [textSize, setTextSize] = useState("34");
-  const [fontFamily, setFontFamily] = useState("Amiri");
+  const [textSize, setTextSize] = useState("82");
+  const [fontFamily, setFontFamily] = useState("KFGQPC Uthmanic Script HAFS");
 
   const [backgroundStyle, setBackgroundStyle] = useState("emerald");
   const [backgroundVideoUrl, setBackgroundVideoUrl] = useState("");
@@ -2407,14 +2407,18 @@ export default function Home() {
                       value={fontFamily}
                       onChange={setFontFamily}
                     >
+                      <option value="KFGQPC Uthmanic Script HAFS">
+                        KFGQPC Uthmanic Script HAFS
+                      </option>
+                      <option value="Amiri Quran">Amiri Quran</option>
                       <option value="Amiri">Amiri</option>
-                      <option value="Cairo">Cairo</option>
-                      <option value="Reem Kufi">Reem Kufi</option>
                       <option value="Noto Naskh Arabic">
                         Noto Naskh Arabic
                       </option>
-                      <option value="Lateef">Lateef</option>
-                      <option value="Scheherazade New">Scheherazade New</option>
+                      <option value="Cairo">Cairo</option>
+                      <option value="IBM Plex Sans Arabic">
+                        IBM Plex Sans Arabic
+                      </option>
                     </SelectBox>
 
                     <SelectBox

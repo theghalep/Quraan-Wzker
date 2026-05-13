@@ -41,6 +41,13 @@ const DEFAULT_RENDER_FONT_FAMILY = "KFGQPC Uthmanic Script HAFS";
 const DEFAULT_BISMILLAH_DURATION_SECONDS = 3.2;
 const BISMILLAH_TEXT = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ";
 
+// In local development, Remotion bundle caching hides changes made to
+// remotion/Video.tsx. Keep production fast, but always rebuild locally.
+const DISABLE_BUNDLE_CACHE =
+  process.env.DISABLE_REMOTION_BUNDLE_CACHE === "true" ||
+  process.env.NODE_ENV !== "production";
+
+
 new Worker(
   "render-queue",
   async (job) => {
@@ -173,17 +180,18 @@ async function renderQuranVideo({
 
   const { bundle, renderMedia, selectComposition } = await loadRemotionRuntime();
 
-  const preparedAyahs = preprocessAyahsForRender({
-    ayahs,
-    exportWidth: exportSettings.width,
-    exportHeight: exportSettings.height,
-    textSize: Number(body.textSize || 72),
-    highlightMode: body.wordHighlightMode || "smart",
-    highlightSpeed: Number(body.wordHighlightSpeed || 1),
-  });
+  // Do NOT inject precomputed caption layout into the render.
+  // The final typography is now calculated inside remotion/Video.tsx from the
+  // actual composition size, text length and selected export preset. Passing
+  // stale/small __prepared.fontSize values here can make the export differ from
+  // the live preview.
+  const renderAyahs = ayahs.map((ayah: any) => ({
+    ...ayah,
+    __prepared: undefined,
+  }));
 
   const inputProps = {
-    ayahs: preparedAyahs,
+    ayahs: renderAyahs,
 
     textColor: body.textColor || "#ffffff",
     textSize: Number(body.textSize || 72),
@@ -252,18 +260,36 @@ async function renderQuranVideo({
     renderScale: safeRenderScale,
   };
 
+  console.log(
+    JSON.stringify({
+      type: "render-input",
+      jobId,
+      disableBundleCache: DISABLE_BUNDLE_CACHE,
+      width: exportSettings.width,
+      height: exportSettings.height,
+      textSize: inputProps.textSize,
+      fontFamily: inputProps.fontFamily,
+      ayahs: renderAyahs.length,
+    }),
+  );
+
   const entry = path.join(process.cwd(), "remotion", "Root.tsx");
 
+  const shouldUseBundleCache = !DISABLE_BUNDLE_CACHE;
   const shouldRebuildBundle =
-    !cachedBundle || Date.now() - cachedBundleAt > BUNDLE_CACHE_TTL;
+    !shouldUseBundleCache ||
+    !cachedBundle ||
+    Date.now() - cachedBundleAt > BUNDLE_CACHE_TTL;
 
-  let bundled = cachedBundle;
+  let bundled = shouldUseBundleCache ? cachedBundle : null;
 
   if (shouldRebuildBundle) {
     await updateRenderJob(jobId, {
       status: "bundling",
       progress: 12,
-      message: "جاري بناء مشروع Remotion",
+      message: shouldUseBundleCache
+        ? "جاري بناء مشروع Remotion"
+        : "جاري بناء مشروع Remotion بدون كاش للتطوير المحلي",
     });
 
     bundled = await bundle({
@@ -271,8 +297,13 @@ async function renderQuranVideo({
       webpackOverride: (config: any) => config,
     });
 
-    cachedBundle = bundled;
-    cachedBundleAt = Date.now();
+    if (shouldUseBundleCache) {
+      cachedBundle = bundled;
+      cachedBundleAt = Date.now();
+    } else {
+      cachedBundle = null;
+      cachedBundleAt = 0;
+    }
   } else {
     await updateRenderJob(jobId, {
       status: "bundling",
