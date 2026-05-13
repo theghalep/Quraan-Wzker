@@ -36,6 +36,7 @@ const ASSET_CHECK_CONCURRENCY = Number(
   process.env.RENDER_ASSET_CHECK_CONCURRENCY || 2,
 );
 const PROGRESS_UPDATE_INTERVAL_MS = 1500;
+const SAFE_RENDER_SCALES = [1, 0.75, 0.5] as const;
 
 new Worker(
   "render-queue",
@@ -94,6 +95,11 @@ async function renderQuranVideo({
   }
 
   const exportSettings = normalizeExportSettings(incomingExportSettings);
+  const safeRenderScale = getIntegerSafeRenderScale(
+    exportSettings.width,
+    exportSettings.height,
+    exportSettings.renderScale,
+  );
 
   const firstAyah = ayahs[0]?.numberInSurah || "start";
   const lastAyah = ayahs[ayahs.length - 1]?.numberInSurah || "end";
@@ -217,7 +223,7 @@ async function renderQuranVideo({
     exportWidth: exportSettings.width,
     exportHeight: exportSettings.height,
     exportFps: exportSettings.fps,
-    renderScale: exportSettings.renderScale,
+    renderScale: safeRenderScale,
   };
 
   const entry = path.join(process.cwd(), "remotion", "Root.tsx");
@@ -311,7 +317,7 @@ async function renderQuranVideo({
     audioBitrate: getAudioBitrate(exportSettings.audioBitrate),
 
     concurrency: renderConcurrency,
-    scale: getRenderScale(exportSettings),
+    scale: safeRenderScale,
 
     imageFormat: "jpeg",
     jpegQuality: getJpegQuality(exportSettings.quality),
@@ -361,7 +367,7 @@ async function renderQuranVideo({
           renderProgress,
           renderConcurrency,
           quality: exportSettings.quality,
-          scale: getRenderScale(exportSettings),
+          scale: safeRenderScale,
         }),
       );
     },
@@ -437,14 +443,18 @@ function normalizeExportSettings(settings: ExportSettings): ExportSettings {
   return {
     ...settings,
     fps: clampNumber(Math.round(Number(settings.fps || 30)), 24, 30),
-    width: Math.max(Math.round(Number(settings.width || 1080)), 360),
-    height: Math.max(Math.round(Number(settings.height || 1920)), 360),
+    width: makeEvenInteger(Math.max(Math.round(Number(settings.width || 1080)), 360)),
+    height: makeEvenInteger(Math.max(Math.round(Number(settings.height || 1920)), 360)),
     crf: getRenderCrf(quality, Number(settings.crf)),
     audioBitrate: getAudioBitrate(settings.audioBitrate),
-    renderScale: getRenderScale({
-      ...settings,
-      quality,
-    }),
+    renderScale: getIntegerSafeRenderScale(
+      makeEvenInteger(Math.max(Math.round(Number(settings.width || 1080)), 360)),
+      makeEvenInteger(Math.max(Math.round(Number(settings.height || 1920)), 360)),
+      getRenderScale({
+        ...settings,
+        quality,
+      }),
+    ),
   };
 }
 
@@ -759,6 +769,41 @@ function getRenderConcurrency() {
   }
 
   return 1;
+}
+
+
+function getIntegerSafeRenderScale(
+  width: number,
+  height: number,
+  requestedScale: number,
+) {
+  const safeWidth = makeEvenInteger(width || 1080);
+  const safeHeight = makeEvenInteger(height || 1920);
+  const requested = clampNumber(Number(requestedScale || 1), 0.5, 1);
+
+  const bestSafeScale =
+    SAFE_RENDER_SCALES.find((scale) => {
+      const scaledWidth = safeWidth * scale;
+      const scaledHeight = safeHeight * scale;
+
+      return (
+        scale <= requested &&
+        Number.isInteger(scaledWidth) &&
+        Number.isInteger(scaledHeight) &&
+        scaledWidth % 2 === 0 &&
+        scaledHeight % 2 === 0
+      );
+    }) || 1;
+
+  return bestSafeScale;
+}
+
+function makeEvenInteger(value: number) {
+  const rounded = Math.round(Number(value || 0));
+
+  if (!Number.isFinite(rounded) || rounded <= 0) return 2;
+
+  return rounded % 2 === 0 ? rounded : rounded + 1;
 }
 
 function getRenderScale(exportSettings: Partial<ExportSettings>) {
