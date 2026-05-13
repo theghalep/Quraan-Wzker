@@ -798,7 +798,6 @@ function VideoCanvas({
             <OffthreadVideo
               src={backgroundVideoUrl}
               muted
-              loop
               playbackRate={0.9}
               style={{
                 position: "absolute",
