@@ -400,7 +400,8 @@ async function renderQuranVideo({
     process.env.PUBLIC_SITE_URL ||
     "http://ec2-16-171-195-194.eu-north-1.compute.amazonaws.com";
 
-  const url = `${siteUrl.replace(/\/$/, "")}/exports/${fileName}`;
+  const encodedFileName = encodeURIComponent(fileName);
+  const url = `${siteUrl.replace(/\/$/, "")}/exports/${encodedFileName}`;
 
   await updateRenderJob(jobId, {
     status: "completed",
