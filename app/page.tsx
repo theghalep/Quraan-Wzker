@@ -1,7 +1,7 @@
 "use client";
 
 import Video from "@/remotion/Video";
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { pickBackgroundFromTopics } from "@/lib/background-themes";
 
 type Reciter = {
@@ -239,8 +239,48 @@ const SYNC_WAVE_BARS = Array.from({ length: 48 }, (_, index) => ({
   height: 16 + ((index * 19) % 46),
 }));
 
+const BACKGROUND_CARDS = [
+  {
+    id: "rain",
+    title: "مطر",
+    description: "أجواء هادئة ومطر سينمائي",
+    image:
+      "https://images.unsplash.com/photo-1515694346937-94d85e41e6f0?q=80&w=1200&auto=format&fit=crop",
+  },
+  {
+    id: "clouds",
+    title: "سحاب",
+    description: "سماء ناعمة وحركة هادئة",
+    image:
+      "https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=1200&auto=format&fit=crop",
+  },
+  {
+    id: "mosque",
+    title: "مسجد",
+    description: "طابع إسلامي روحاني",
+    image:
+      "https://images.unsplash.com/photo-1564769625905-50e93615e769?q=80&w=1200&auto=format&fit=crop",
+  },
+  {
+    id: "nature",
+    title: "طبيعة",
+    description: "مشاهد طبيعية مريحة",
+    image:
+      "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1200&auto=format&fit=crop",
+  },
+  {
+    id: "night",
+    title: "ليل",
+    description: "أجواء ليلية ونجوم",
+    image:
+      "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?q=80&w=1200&auto=format&fit=crop",
+  },
+];
+
+
 export default function Home() {
   const isMobile = useIsMobile();
+  const exportLogTimersRef = useRef<number[]>([]);
 
   const [surahs, setSurahs] = useState<Surah[]>([]);
   const [ayahs, setAyahs] = useState<Ayah[]>([]);
@@ -403,8 +443,10 @@ export default function Home() {
     () => reciters.find((item) => item.identifier === reciter),
     [reciters, reciter],
   );
-  const selectedReciterName =
-    selectedReciter?.name || selectedReciter?.englishName || reciter;
+  const selectedReciterName = useMemo(
+    () => selectedReciter?.name || selectedReciter?.englishName || reciter,
+    [selectedReciter, reciter],
+  );
 
   const displaySurahName = useMemo(
     () => cleanSurahName(selectedSurah?.name || "الفاتحة"),
@@ -422,7 +464,6 @@ export default function Home() {
     );
   }, [previewAyahs]);
 
-  const durationInFrames = Math.ceil(previewDurationSeconds * 30);
 
   const currentSyncItem = useMemo(
     () => getCurrentPreviewSyncItem(previewAyahs, previewSeekSeconds),
@@ -433,8 +474,14 @@ export default function Home() {
     () => splitTextWords(currentSyncAyah?.text || ""),
     [currentSyncAyah?.text],
   );
-  const currentSyncKey = getAyahSyncKey(currentSyncAyah, currentSyncItem.index);
-  const currentSyncTimings = manualWordTimings[currentSyncKey] || [];
+  const currentSyncKey = useMemo(
+    () => getAyahSyncKey(currentSyncAyah, currentSyncItem.index),
+    [currentSyncAyah, currentSyncItem.index],
+  );
+  const currentSyncTimings = useMemo(
+    () => manualWordTimings[currentSyncKey] || [],
+    [manualWordTimings, currentSyncKey],
+  );
 
   useEffect(() => {
     setTapSyncIndex(0);
@@ -555,6 +602,15 @@ export default function Home() {
     loadRecentExports();
   }, []);
 
+
+
+  useEffect(() => {
+    return () => {
+      exportLogTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+      exportLogTimersRef.current = [];
+    };
+  }, []);
+
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem("quran-reels-recent-searches");
@@ -594,25 +650,38 @@ export default function Home() {
     const interval = window.setInterval(() => {
       const elapsedSeconds = Math.floor((Date.now() - exportStartedAt) / 1000);
 
-      setExportElapsedSeconds(elapsedSeconds);
-      setExportEstimatedRemainingSeconds(
-        Math.max(exportEstimatedTotalSeconds - elapsedSeconds, 0),
+      setExportElapsedSeconds((current) =>
+        current === elapsedSeconds ? current : elapsedSeconds,
       );
-
-      setRealRenderProgress((current) => {
-        const estimatedProgress = Math.min(
-          Math.round(
-            (elapsedSeconds / Math.max(exportEstimatedTotalSeconds, 1)) * 95,
-          ),
-          95,
+      setExportEstimatedRemainingSeconds((current) => {
+        const nextRemaining = Math.max(
+          exportEstimatedTotalSeconds - elapsedSeconds,
+          0,
         );
 
-        return Math.max(current, estimatedProgress);
+        return current === nextRemaining ? current : nextRemaining;
       });
-    }, 1000);
+
+    }, 1500);
 
     return () => window.clearInterval(interval);
   }, [exporting, exportStartedAt, exportEstimatedTotalSeconds]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        setPreviewPlaying(false);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
+
 
   useEffect(() => {
     async function getReciters() {
@@ -1035,16 +1104,16 @@ export default function Home() {
     });
   }
 
-  function usePromptSuggestion(prompt: string) {
+  const usePromptSuggestion = useCallback((prompt: string) => {
     setAiPrompt(prompt);
-  }
+  }, []);
 
-  function seekPreviewBySeconds(delta: number) {
+  const seekPreviewBySeconds = useCallback((delta: number) => {
     setPreviewSeekSeconds((current) =>
       clampNumber(current + delta, 0, previewDurationSeconds),
     );
     setPreviewPlaying(false);
-  }
+  }, [previewDurationSeconds]);
 
   async function generateAiReel() {
     try {
@@ -1311,6 +1380,101 @@ export default function Home() {
     }
   }
 
+  async function waitForRenderJob({
+    jobId,
+    startedAt,
+    firstSelectedAyah,
+    lastSelectedAyah,
+  }: {
+    jobId: string;
+    startedAt: number;
+    firstSelectedAyah: number | string;
+    lastSelectedAyah: number | string;
+  }) {
+    let lastLoggedStatus = "";
+    let lastLoggedProgress = -1;
+    const maxAttempts = 900;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await sleep(attempt === 0 ? 900 : 2000);
+
+      const response = await fetch(
+        `/api/render?jobId=${encodeURIComponent(jobId)}&t=${Date.now()}`,
+        { cache: "no-store" },
+      );
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          data.message || data.error || "فشل متابعة حالة التصدير",
+        );
+      }
+
+      const job = data.job || data;
+      const status = String(job.status || "queued");
+      const progress = clampNumber(Number(job.progress || 0), 0, 100);
+      const message = job.message || getRenderStatusMessage(status);
+
+      setExportStatus(message);
+      setRealRenderProgress((current) => Math.max(current, progress));
+
+      const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+      setExportElapsedSeconds(elapsedSeconds);
+
+      if (
+        status !== lastLoggedStatus ||
+        progress === 100 ||
+        Math.abs(progress - lastLoggedProgress) >= 10
+      ) {
+        setExportLogs((logs) => [
+          ...logs,
+          `${message}${progress ? ` — ${progress}%` : ""}`,
+        ]);
+        lastLoggedStatus = status;
+        lastLoggedProgress = progress;
+      }
+
+      if (status === "completed") {
+        if (!job.url) {
+          throw new Error("تم التصدير لكن رابط التحميل غير موجود");
+        }
+
+        const finalElapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+        const finalUrl = `${job.url}${job.url.includes("?") ? "&" : "?"}t=${Date.now()}`;
+
+        setDownloadUrl(finalUrl);
+        setExportFileName(
+          job.fileName ||
+            buildDownloadFileName({
+              reciter: selectedReciterName,
+              surahName: displaySurahName || "surah",
+              fromAyah: firstSelectedAyah,
+              toAyah: lastSelectedAyah,
+            }),
+        );
+        setExportElapsedSeconds(finalElapsedSeconds);
+        setExportEstimatedRemainingSeconds(0);
+        setRealRenderProgress(100);
+        setExportStatus("تم التصدير بنجاح ✅");
+        setExportLogs((logs) => [
+          ...logs,
+          `تم إنشاء ملف الفيديو بنجاح في ${formatDuration(finalElapsedSeconds)}`,
+        ]);
+
+        await loadRecentExports();
+        playExportDoneSound();
+        return;
+      }
+
+      if (status === "failed") {
+        throw new Error(job.error || message || "فشل التصدير");
+      }
+    }
+
+    throw new Error("انتهت مهلة متابعة التصدير. راجع logs السيرفر.");
+  }
+
   async function exportVideo() {
     const startedAt = Date.now();
 
@@ -1358,6 +1522,8 @@ export default function Home() {
         "جاري إرسال بيانات الفيديو للسيرفر...",
       ]);
 
+      exportLogTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+
       const logTimers = [
         window.setTimeout(() => {
           setExportStatus("جاري تجهيز ملفات الصوت والخلفية...");
@@ -1379,6 +1545,7 @@ export default function Home() {
           setExportLogs((logs) => [...logs, "جاري إخراج ملف MP4..."]);
         }, 3800),
       ];
+      exportLogTimersRef.current = logTimers;
 
       const response = await fetch("/api/render", {
         method: "POST",
@@ -1441,43 +1608,33 @@ export default function Home() {
       });
 
       logTimers.forEach((timer) => window.clearTimeout(timer));
+      exportLogTimersRef.current = [];
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
-      if (!response.ok || !data.url) {
-        setExportStatus("فشل التصدير");
+      if (!response.ok || !data.jobId) {
+        setExportStatus("فشل إرسال مهمة التصدير");
         setExportLogs((logs) => [
           ...logs,
-          data.message || "فشل التصدير أثناء المعالجة",
+          data.message || data.error || "فشل إرسال مهمة التصدير للسيرفر",
         ]);
-        alert(data.message || "فشل التصدير");
+        alert(data.message || data.error || "فشل إرسال مهمة التصدير");
         return;
       }
 
-      const finalElapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
-      const finalUrl = data.url + "?t=" + Date.now();
-
-      setDownloadUrl(finalUrl);
-      setExportFileName(
-        data.fileName ||
-          buildDownloadFileName({
-            reciter: selectedReciterName,
-            surahName: displaySurahName || "surah",
-            fromAyah: firstSelectedAyah,
-            toAyah: lastSelectedAyah,
-          }),
-      );
-      setExportElapsedSeconds(finalElapsedSeconds);
-      setExportEstimatedRemainingSeconds(0);
-      setRealRenderProgress(100);
-      setExportStatus("تم التصدير بنجاح ✅");
+      setExportStatus(data.message || "تمت إضافة الفيديو لقائمة الانتظار");
       setExportLogs((logs) => [
         ...logs,
-        `تم إنشاء ملف الفيديو بنجاح في ${formatDuration(finalElapsedSeconds)}`,
+        `تم إنشاء مهمة التصدير: ${data.jobId}`,
+        "جاري متابعة حالة التصدير من السيرفر...",
       ]);
 
-      await loadRecentExports();
-      playExportDoneSound();
+      await waitForRenderJob({
+        jobId: data.jobId,
+        startedAt,
+        firstSelectedAyah,
+        lastSelectedAyah,
+      });
     } catch (error) {
       console.log(error);
       setExportStatus("حدث خطأ أثناء التصدير");
@@ -1485,49 +1642,15 @@ export default function Home() {
       setExportLogs((logs) => [...logs, "حدث خطأ أثناء التصدير"]);
       alert("حدث خطأ أثناء التصدير");
     } finally {
+      exportLogTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+      exportLogTimersRef.current = [];
       setExporting(false);
       setExportStartedAt(null);
       setExportEstimatedRemainingSeconds(0);
     }
   }
 
-  const backgroundCards = [
-    {
-      id: "rain",
-      title: "مطر",
-      description: "أجواء هادئة ومطر سينمائي",
-      image:
-        "https://images.unsplash.com/photo-1515694346937-94d85e41e6f0?q=80&w=1200&auto=format&fit=crop",
-    },
-    {
-      id: "clouds",
-      title: "سحاب",
-      description: "سماء ناعمة وحركة هادئة",
-      image:
-        "https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=1200&auto=format&fit=crop",
-    },
-    {
-      id: "mosque",
-      title: "مسجد",
-      description: "طابع إسلامي روحاني",
-      image:
-        "https://images.unsplash.com/photo-1564769625905-50e93615e769?q=80&w=1200&auto=format&fit=crop",
-    },
-    {
-      id: "nature",
-      title: "طبيعة",
-      description: "مشاهد طبيعية مريحة",
-      image:
-        "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1200&auto=format&fit=crop",
-    },
-    {
-      id: "night",
-      title: "ليل",
-      description: "أجواء ليلية ونجوم",
-      image:
-        "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?q=80&w=1200&auto=format&fit=crop",
-    },
-  ];
+  const backgroundCards = BACKGROUND_CARDS;
 
   return (
     <main
@@ -1580,10 +1703,14 @@ export default function Home() {
             }}
           >
             <div className="relative flex h-full min-h-0 w-full items-center justify-center overflow-hidden">
-              <div className="absolute h-[520px] w-[520px] rounded-full bg-emerald-400/20 blur-[110px]" />
-              <div className="absolute h-[360px] w-[360px] translate-x-24 translate-y-20 rounded-full bg-cyan-400/10 blur-[110px]" />
+              {!isMobile && (
+                <>
+                  <div className="absolute h-[520px] w-[520px] rounded-full bg-emerald-400/20 blur-[110px]" />
+                  <div className="absolute h-[360px] w-[360px] translate-x-24 translate-y-20 rounded-full bg-cyan-400/10 blur-[110px]" />
+                </>
+              )}
 
-              <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-[34px] border border-white/15 bg-black p-2 shadow-[0_40px_120px_rgba(0,0,0,0.75)]">
+              <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-[34px] border border-white/15 bg-black p-2 shadow-[0_18px_48px_rgba(0,0,0,0.55)]">
                 <div className="pointer-events-none absolute -inset-1 rounded-[40px] border border-emerald-400/20" />
                 <div
                   style={{
@@ -1599,7 +1726,7 @@ export default function Home() {
                     previewSeekSeconds={previewSeekSeconds}
                   />
 
-                  <div className="pointer-events-none absolute right-4 top-4 z-20 rounded-2xl border border-white/10 bg-black/55 px-3 py-2 text-[11px] font-black text-white backdrop-blur-xl">
+                  <div className={`pointer-events-none absolute right-4 top-4 z-20 rounded-2xl border border-white/10 bg-black/55 px-3 py-2 text-[11px] font-black text-white ${isMobile ? "backdrop-blur-sm" : "backdrop-blur-xl"}`}>
                     {selectedExportPreset.label} · {selectedExportPreset.width}×
                     {selectedExportPreset.height} ·{" "}
                     {previewIsLandscape
@@ -1609,7 +1736,7 @@ export default function Home() {
                         : "Vertical"}
                   </div>
 
-                  <div className="pointer-events-auto absolute inset-x-4 bottom-4 z-20 rounded-[26px] border border-white/10 bg-black/55 p-3 shadow-2xl backdrop-blur-xl">
+                  <div className={`pointer-events-auto absolute inset-x-4 bottom-4 z-20 rounded-[26px] border border-white/10 bg-black/55 p-3 ${isMobile ? "shadow-lg backdrop-blur-sm" : "shadow-2xl backdrop-blur-xl"}`}>
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <button
                         type="button"
@@ -3648,7 +3775,7 @@ function Panel({
 }: {
   title: string;
   description: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <section className="animate-slide-up space-y-5">
@@ -3695,7 +3822,7 @@ function CompactSection({
 }: {
   title: string;
   description: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div className="animate-fade-in rounded-[28px] border border-white/10 bg-black/20 p-4">
@@ -3732,7 +3859,7 @@ function SettingsGroup({
   defaultOpen = false,
 }: {
   title: string;
-  children: React.ReactNode;
+  children: ReactNode;
   defaultOpen?: boolean;
 }) {
   return (
@@ -3757,7 +3884,7 @@ function SelectBox({
   label: string;
   value: string;
   onChange: (value: string) => void;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div>
@@ -3782,7 +3909,7 @@ function BasicSelect({
   label: string;
   value: string;
   onChange: (value: string) => void;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div>
@@ -4408,6 +4535,20 @@ function getAudioDuration(src: string): Promise<number> {
       resolve(5);
     });
   });
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function getRenderStatusMessage(status: string) {
+  if (status === "queued") return "في قائمة الانتظار";
+  if (status === "validating") return "جاري فحص الخلفية وملفات الصوت";
+  if (status === "bundling") return "جاري تجهيز Remotion";
+  if (status === "rendering") return "جاري تصدير الفيديو";
+  if (status === "completed") return "تم التصدير بنجاح";
+  if (status === "failed") return "فشل التصدير";
+  return "جاري معالجة الفيديو";
 }
 
 function clampNumber(value: number, min: number, max: number) {

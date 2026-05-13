@@ -31,6 +31,12 @@ export type RenderJobRecord = {
 const JOB_TTL_SECONDS = 60 * 60 * 24;
 const COMPLETED_JOB_TTL_SECONDS = 60 * 60 * 6;
 const FAILED_JOB_TTL_SECONDS = 60 * 60 * 12;
+const RENDER_JOBS_INDEX_KEY = "render-jobs:index";
+const MAX_RENDER_JOBS_INDEX_SIZE = 100;
+
+function getJobKey(jobId: string) {
+  return `render-job:${jobId}`;
+}
 
 function getJobTtl(status?: RenderJobStatus) {
   if (status === "completed") return COMPLETED_JOB_TTL_SECONDS;
@@ -42,11 +48,12 @@ export async function updateRenderJob(
   jobId: string,
   updates: Partial<RenderJobRecord>,
 ) {
-  const key = `render-job:${jobId}`;
+  const key = getJobKey(jobId);
+  const now = new Date().toISOString();
 
   let current: RenderJobRecord = {
     id: jobId,
-    createdAt: new Date().toISOString(),
+    createdAt: now,
   };
 
   const currentRaw = await redis.get(key);
@@ -57,7 +64,7 @@ export async function updateRenderJob(
     } catch {
       current = {
         id: jobId,
-        createdAt: new Date().toISOString(),
+        createdAt: now,
       };
     }
   }
@@ -66,16 +73,26 @@ export async function updateRenderJob(
     ...current,
     ...updates,
     id: jobId,
-    updatedAt: new Date().toISOString(),
+    createdAt: current.createdAt || updates.createdAt || now,
+    updatedAt: now,
   };
 
-  await redis.set(key, JSON.stringify(next), "EX", getJobTtl(next.status));
+  const ttl = getJobTtl(next.status);
+  const score = new Date(next.createdAt || now).getTime();
+
+  await redis
+    .multi()
+    .set(key, JSON.stringify(next), "EX", ttl)
+    .zadd(RENDER_JOBS_INDEX_KEY, score, jobId)
+    .zremrangebyrank(RENDER_JOBS_INDEX_KEY, 0, -(MAX_RENDER_JOBS_INDEX_SIZE + 1))
+    .expire(RENDER_JOBS_INDEX_KEY, JOB_TTL_SECONDS)
+    .exec();
 
   return next;
 }
 
 export async function getRenderJob(jobId: string) {
-  const raw = await redis.get(`render-job:${jobId}`);
+  const raw = await redis.get(getJobKey(jobId));
 
   if (!raw) return null;
 
@@ -86,6 +103,21 @@ export async function getRenderJob(jobId: string) {
   }
 }
 
+export async function getRecentRenderJobs(limit = 25) {
+  const safeLimit = Math.max(1, Math.min(Math.floor(limit), 100));
+  const ids = await redis.zrevrange(RENDER_JOBS_INDEX_KEY, 0, safeLimit - 1);
+
+  if (!ids.length) return [];
+
+  const rows = await Promise.all(ids.map((id) => getRenderJob(id)));
+
+  return rows.filter(Boolean) as RenderJobRecord[];
+}
+
 export async function deleteRenderJob(jobId: string) {
-  await redis.del(`render-job:${jobId}`);
+  await redis
+    .multi()
+    .del(getJobKey(jobId))
+    .zrem(RENDER_JOBS_INDEX_KEY, jobId)
+    .exec();
 }

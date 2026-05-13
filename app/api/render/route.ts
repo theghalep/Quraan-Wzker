@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { renderQueue } from "@/lib/queue/renderQueue";
 import {
+  getRecentRenderJobs,
   getRenderJob,
   updateRenderJob,
 } from "@/lib/queue/renderJobStore";
@@ -54,23 +55,23 @@ const MAX_DURATION_SECONDS = 600;
 const MAX_RENDER_JOBS_HISTORY = 25;
 
 const EXPORT_PRESETS = {
- reels: {
-  label: "Reels",
-  width: 720,
-  height: 1280,
-},
+  reels: {
+    label: "Reels",
+    width: 1080,
+    height: 1920,
+  },
 
-tiktok: {
-  label: "TikTok",
-  width: 720,
-  height: 1280,
-},
+  tiktok: {
+    label: "TikTok",
+    width: 1080,
+    height: 1920,
+  },
 
-shorts: {
-  label: "YouTube Shorts",
-  width: 720,
-  height: 1280,
-},
+  shorts: {
+    label: "YouTube Shorts",
+    width: 1080,
+    height: 1920,
+  },
 
   whatsapp: {
     label: "WhatsApp Status",
@@ -97,7 +98,7 @@ const EXPORT_QUALITIES = {
     crf: 34,
     audioBitrate: "80k",
     fps: 24,
-    renderScale: 0.7,
+    renderScale: 0.62,
   },
 
   standard: {
@@ -105,108 +106,90 @@ const EXPORT_QUALITIES = {
     crf: 30,
     audioBitrate: "96k",
     fps: 24,
-    renderScale: 0.85,
+    renderScale: 0.72,
   },
 
   high: {
     label: "High",
-    crf: 23,
+    crf: 24,
     audioBitrate: "128k",
     fps: 30,
-  renderScale: 0.55,
+    renderScale: 0.82,
   },
 
   ultra: {
     label: "Ultra",
-    crf: 20,
-    audioBitrate: "192k",
+    crf: 21,
+    audioBitrate: "160k",
     fps: 30,
-  renderScale: 0.65,
+    renderScale: 0.92,
   },
 } as const;
 
-export async function GET() {
-  const queueJobs = await renderQueue.getJobs([
-    "waiting",
-    "active",
-    "completed",
-    "failed",
-    "delayed",
-  ]);
+export async function GET(request: NextRequest) {
+  try {
+    const jobId = request.nextUrl.searchParams.get("jobId");
 
-  const jobs = await Promise.all(
-    queueJobs.slice(0, MAX_RENDER_JOBS_HISTORY).map(async (job) => {
-      const id = String(job.data?.jobId || job.id);
-      const redisJob = await getRenderJob(id);
-      const bullStatus = getBullJobStatus(job);
-      const status = normalizeStatus(redisJob?.status || bullStatus);
+    if (jobId) {
+      const redisJob = await getRenderJob(jobId);
+      const bullJob = await renderQueue.getJob(jobId);
 
-      const progress = clampNumber(
-        Number(redisJob?.progress ?? job.progress ?? 0),
-        0,
-        100,
-      );
+      if (!redisJob && !bullJob) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Job not found",
+            message: "لم يتم العثور على مهمة التصدير",
+          },
+          { status: 404 },
+        );
+      }
 
-      const createdAt =
-        redisJob?.createdAt ||
-        (job.timestamp
-          ? new Date(job.timestamp).toISOString()
-          : new Date().toISOString());
+      return NextResponse.json({
+        success: true,
+        job: normalizeJobResponse(jobId, redisJob, bullJob),
+      });
+    }
 
-      const updatedAt =
-        redisJob?.updatedAt ||
-        new Date(job.finishedOn || job.processedOn || Date.now()).toISOString();
+    const redisJobs = await getRecentRenderJobs(MAX_RENDER_JOBS_HISTORY);
 
-      const normalizedJob: RenderJobResponse = {
-        id,
-        status,
-        progress: status === "completed" ? 100 : progress,
-        message:
-          redisJob?.message ||
-          job.returnvalue?.message ||
-          getDefaultStatusMessage(status),
-        url: redisJob?.url || job.returnvalue?.url,
-        fileName: redisJob?.fileName || job.returnvalue?.fileName,
-        error:
-          status === "failed"
-            ? redisJob?.error || job.failedReason || undefined
-            : undefined,
-        createdAt,
-        updatedAt,
-        completedAt:
-          redisJob?.completedAt ||
-          (job.finishedOn ? new Date(job.finishedOn).toISOString() : undefined),
-        exportPreset: redisJob?.exportPreset || job.data?.exportSettings?.preset,
-        exportQuality:
-          redisJob?.exportQuality || job.data?.exportSettings?.quality,
-        exportWidth: redisJob?.exportWidth || job.data?.exportSettings?.width,
-        exportHeight: redisJob?.exportHeight || job.data?.exportSettings?.height,
-        exportFps: redisJob?.exportFps || job.data?.exportSettings?.fps,
-        durationInSeconds: redisJob?.durationInSeconds,
-        durationInFrames:
-          redisJob?.durationInFrames || job.returnvalue?.durationInFrames,
-      };
+    const jobs = await Promise.all(
+      redisJobs.map(async (redisJob) => {
+        const id = String(redisJob.id);
+        const bullJob = await renderQueue.getJob(id);
+        return normalizeJobResponse(id, redisJob, bullJob);
+      }),
+    );
 
-      return normalizedJob;
-    }),
-  );
+    const sortedJobs = jobs
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      )
+      .slice(0, MAX_RENDER_JOBS_HISTORY);
 
-  const sortedJobs = jobs
-    .sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    )
-    .slice(0, MAX_RENDER_JOBS_HISTORY);
+    return NextResponse.json({
+      success: true,
+      isRendering: sortedJobs.some((job) =>
+        ["queued", "validating", "bundling", "rendering"].includes(job.status),
+      ),
+      jobs: sortedJobs,
+    });
+  } catch (error: any) {
+    console.error("RENDER_GET_ERROR:", error);
 
-  return NextResponse.json({
-    isRendering: sortedJobs.some((job) =>
-      ["queued", "validating", "bundling", "rendering"].includes(job.status),
-    ),
-    jobs: sortedJobs,
-  });
+    return NextResponse.json(
+      {
+        success: false,
+        error: error?.message || "Failed to read render jobs",
+        message: "حدث خطأ أثناء قراءة حالة التصدير",
+      },
+      { status: 500 },
+    );
+  }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   let jobId = "";
 
   try {
@@ -216,22 +199,22 @@ export async function POST(request: Request) {
     if (!ayahs.length) {
       return NextResponse.json(
         {
+          success: false,
           error: "لا توجد آيات",
+          message: "لا توجد آيات للتصدير",
         },
-        {
-          status: 400,
-        },
+        { status: 400 },
       );
     }
 
     if (!body.backgroundVideoUrl) {
       return NextResponse.json(
         {
+          success: false,
           error: "لا توجد خلفية",
+          message: "اختار أو ارفع خلفية أولًا",
         },
-        {
-          status: 400,
-        },
+        { status: 400 },
       );
     }
 
@@ -243,11 +226,11 @@ export async function POST(request: Request) {
     if (totalDurationInSeconds > MAX_DURATION_SECONDS) {
       return NextResponse.json(
         {
+          success: false,
           error: "مدة الفيديو طويلة جدًا",
+          message: "مدة الفيديو طويلة جدًا. الحد الحالي 10 دقائق.",
         },
-        {
-          status: 400,
-        },
+        { status: 400 },
       );
     }
 
@@ -283,19 +266,7 @@ export async function POST(request: Request) {
           "http://localhost:3000",
       },
       {
-        attempts: 2,
-        backoff: {
-          type: "exponential",
-          delay: 3000,
-        },
-        removeOnComplete: {
-          age: 60 * 60,
-          count: 10,
-        },
-        removeOnFail: {
-          age: 60 * 60 * 6,
-          count: 20,
-        },
+        jobId,
       },
     );
 
@@ -305,6 +276,11 @@ export async function POST(request: Request) {
       status: "queued",
       progress: 0,
       message: "تمت إضافة الفيديو لقائمة الانتظار",
+      exportPreset: exportSettings.preset,
+      exportQuality: exportSettings.quality,
+      exportWidth: exportSettings.width,
+      exportHeight: exportSettings.height,
+      exportFps: exportSettings.fps,
     });
   } catch (error: any) {
     console.error("RENDER_ROUTE_ERROR:", error);
@@ -321,16 +297,71 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       {
+        success: false,
         error: error?.message || "Render queue failed",
+        message: "حدث خطأ أثناء إضافة الفيديو لقائمة التصدير",
       },
-      {
-        status: 500,
-      },
+      { status: 500 },
     );
   }
 }
 
-function getBullJobStatus(job: any): RenderJobStatus {
+function normalizeJobResponse(
+  id: string,
+  redisJob: any | null,
+  bullJob: any | null,
+): RenderJobResponse {
+  const bullStatus = getBullJobStatus(bullJob);
+  const status = normalizeStatus(redisJob?.status || bullStatus);
+
+  const progress = clampNumber(
+    Number(redisJob?.progress ?? bullJob?.progress ?? 0),
+    0,
+    100,
+  );
+
+  const createdAt =
+    redisJob?.createdAt ||
+    (bullJob?.timestamp
+      ? new Date(bullJob.timestamp).toISOString()
+      : new Date().toISOString());
+
+  const updatedAt =
+    redisJob?.updatedAt ||
+    new Date(bullJob?.finishedOn || bullJob?.processedOn || Date.now()).toISOString();
+
+  return {
+    id,
+    status,
+    progress: status === "completed" ? 100 : progress,
+    message:
+      redisJob?.message ||
+      bullJob?.returnvalue?.message ||
+      getDefaultStatusMessage(status),
+    url: redisJob?.url || bullJob?.returnvalue?.url,
+    fileName: redisJob?.fileName || bullJob?.returnvalue?.fileName,
+    error:
+      status === "failed"
+        ? redisJob?.error || bullJob?.failedReason || undefined
+        : undefined,
+    createdAt,
+    updatedAt,
+    completedAt:
+      redisJob?.completedAt ||
+      (bullJob?.finishedOn ? new Date(bullJob.finishedOn).toISOString() : undefined),
+    exportPreset: redisJob?.exportPreset || bullJob?.data?.exportSettings?.preset,
+    exportQuality: redisJob?.exportQuality || bullJob?.data?.exportSettings?.quality,
+    exportWidth: redisJob?.exportWidth || bullJob?.data?.exportSettings?.width,
+    exportHeight: redisJob?.exportHeight || bullJob?.data?.exportSettings?.height,
+    exportFps: redisJob?.exportFps || bullJob?.data?.exportSettings?.fps,
+    durationInSeconds: redisJob?.durationInSeconds,
+    durationInFrames:
+      redisJob?.durationInFrames || bullJob?.returnvalue?.durationInFrames,
+  };
+}
+
+function getBullJobStatus(job: any | null): RenderJobStatus {
+  if (!job) return "queued";
   if (job.finishedOn && !job.failedReason) return "completed";
   if (job.failedReason) return "failed";
   if (job.processedOn) return "rendering";
@@ -378,9 +409,7 @@ function resolveExportSettings(body: any): ExportSettings {
     ? requestedQuality
     : "high";
 
-  const presetSettings =
-    EXPORT_PRESETS[preset as keyof typeof EXPORT_PRESETS];
-
+  const presetSettings = EXPORT_PRESETS[preset as keyof typeof EXPORT_PRESETS];
   const qualitySettings =
     EXPORT_QUALITIES[quality as keyof typeof EXPORT_QUALITIES];
 
@@ -400,7 +429,7 @@ function resolveExportSettings(body: any): ExportSettings {
 
     crf: qualitySettings.crf,
     audioBitrate: qualitySettings.audioBitrate,
-    fps: clampNumber(Number(body.exportFps || qualitySettings.fps), 24, 60),
+    fps: clampNumber(Number(body.exportFps || qualitySettings.fps), 24, 30),
     renderScale: qualitySettings.renderScale,
   };
 }
