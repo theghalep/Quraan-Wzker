@@ -312,13 +312,9 @@ async function renderQuranVideo({
     exportSettings.quality || "quality",
   );
 
-  const safeSurahName = sanitizeFileName(
-    body.surahName || "surah",
-  );
+  const safeSurahName = sanitizeFileName(body.surahName || "") || "surah";
 
-  const safeReciter = sanitizeFileName(
-    body.reciter || "reciter",
-  );
+  const safeReciter = sanitizeFileName(body.reciter || "") || "reciter";
 
   const fileName =
     `${safeReciter}-` +
@@ -1016,10 +1012,14 @@ function getChromiumGlBackend() {
 }
 
 function sanitizeFileName(value: string) {
-  return value
-    .trim()
-    .replace(/[\/:*?"<>|]/g, "")
+  return String(value || "")
+    .normalize("NFKD")
+    .replace(/[\u064B-\u065F\u0670]/g, "")
+    .replace(/[^a-zA-Z0-9\s-_]/g, "")
     .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-_]+|[-_]+$/g, "")
+    .toLowerCase()
     .slice(0, 80);
 }
 
