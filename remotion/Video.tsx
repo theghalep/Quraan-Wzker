@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Audio,
   Img,
-  Loop,
   OffthreadVideo,
   Sequence,
   useCurrentFrame,
@@ -36,6 +35,8 @@ type Ayah = {
   numberInSurah?: number;
   audioStartFromSeconds?: number;
   tafsir?: string;
+  __isHookIntro?: boolean;
+  hookStyle?: HookStyle;
   __isBismillahIntro?: boolean;
   __prepared?: PreparedAyahRenderData;
 };
@@ -51,6 +52,11 @@ type Props = {
   totalVideoDuration?: number;
   backgroundType?: "video" | "image";
   isRemotionRender?: boolean;
+
+  showHook?: boolean;
+  hookText?: string;
+  hookDuration?: number;
+  hookStyle?: HookStyle;
 
   exportPreset?: string;
   exportQuality?: string;
@@ -121,6 +127,8 @@ type Props = {
   progressHeight?: number;
   timerSize?: number;
 };
+
+type HookStyle = "reflection" | "question" | "warning" | "emotional";
 
 type TimelineItem = {
   ayah: Ayah;
@@ -352,11 +360,22 @@ function BrowserPreviewVideo(props: Props) {
     const video = backgroundVideoRef.current;
     if (!video || normalized.backgroundType !== "video") return;
 
-    const duration =
+    const measuredDuration =
       Number.isFinite(video.duration) && video.duration > 0
         ? video.duration
         : 0;
-    const targetTime = duration > 0 ? previewTime % duration : previewTime;
+    const sourceDuration = Number(normalized.backgroundVideoDuration || measuredDuration || 0);
+    const playbackRate = getSmartBackgroundPlaybackRate({
+      sourceDurationInSeconds: sourceDuration,
+      targetDurationInSeconds: totalVideoDuration,
+    });
+    const shouldUseSlowPlayback =
+      sourceDuration > 0 && totalVideoDuration > sourceDuration && playbackRate < 1;
+    const targetTime = shouldUseSlowPlayback
+      ? Math.min(previewTime * playbackRate, Math.max(sourceDuration - 0.05, 0))
+      : sourceDuration > 0
+        ? previewTime % sourceDuration
+        : previewTime;
     const shouldHardSeek = Math.abs(video.currentTime - targetTime) > 0.22;
 
     if (shouldHardSeek) {
@@ -367,7 +386,7 @@ function BrowserPreviewVideo(props: Props) {
       }
     }
 
-    video.playbackRate = 1;
+    video.playbackRate = playbackRate;
 
     if (previewPlaying && previewTime < totalVideoDuration) {
       video.play().catch(() => undefined);
@@ -380,6 +399,7 @@ function BrowserPreviewVideo(props: Props) {
     totalVideoDuration,
     normalized.backgroundType,
     normalized.backgroundVideoUrl,
+    normalized.backgroundVideoDuration,
   ]);
 
   useEffect(() => {
@@ -453,7 +473,14 @@ function useNormalizedProps({
   textSize = 48,
   fontFamily = "Amiri Quran",
   backgroundVideoUrl = "",
+  backgroundVideoDuration = 0,
+  totalVideoDuration = 0,
   backgroundType = "video",
+
+  showHook = true,
+  hookText = "توقّف لحظة… هذه الآية لك",
+  hookDuration = 2.5,
+  hookStyle = "reflection",
   exportPreset = "reels",
   exportQuality = "high",
   exportWidth = 1080,
@@ -523,13 +550,40 @@ function useNormalizedProps({
   const safeAyahs = useMemo(() => {
     const inputAyahs = ayahs.length > 0 ? ayahs : [FALLBACK_AYAH];
 
-    return normalizeAyahsWithBismillahIntro({
+    const ayahsWithIntro = normalizeAyahsWithBismillahIntro({
       ayahs: inputAyahs,
       showBismillahIntro,
       bismillahAudioUrl,
       bismillahDuration,
     });
-  }, [ayahs, showBismillahIntro, bismillahAudioUrl, bismillahDuration]);
+
+    const cleanHookText = String(hookText || "").trim();
+    const safeHookDuration = clampNumber(Number(hookDuration || 2.5), 1, 4);
+
+    if (!showHook || !cleanHookText || safeHookDuration <= 0) {
+      return ayahsWithIntro;
+    }
+
+    return [
+      {
+        text: cleanHookText,
+        audio: "",
+        duration: safeHookDuration,
+        __isHookIntro: true,
+        hookStyle,
+      },
+      ...ayahsWithIntro,
+    ];
+  }, [
+    ayahs,
+    showBismillahIntro,
+    bismillahAudioUrl,
+    bismillahDuration,
+    showHook,
+    hookText,
+    hookDuration,
+    hookStyle,
+  ]);
 
   const ayahsKey = useMemo(() => {
     return safeAyahs
@@ -547,7 +601,13 @@ function useNormalizedProps({
     textSize,
     fontFamily,
     backgroundVideoUrl,
+    backgroundVideoDuration,
+    totalVideoDuration,
     backgroundType,
+    showHook,
+    hookText,
+    hookDuration,
+    hookStyle,
     exportPreset,
     exportQuality,
     exportWidth,
@@ -810,11 +870,6 @@ function VideoCanvas({
   );
   const safeSurahTitle = formatSurahTitle(surahName);
 
-  const smartBackgroundPlaybackRate = getSmartBackgroundPlaybackRate({
-    sourceDurationInSeconds: Number(backgroundVideoDuration || 0),
-    targetDurationInSeconds: Number(totalVideoDuration || 0),
-  });
-
   return (
     <>
       <style suppressHydrationWarning>{`${QURAN_FONT_FACE_CSS}${animationStyleTag}`}</style>
@@ -1042,37 +1097,56 @@ function VideoCanvas({
               filter: "none",
             }}
           >
-            <AnimatedText
-              text={
-                currentAyah?.text || BISMILLAH_TEXT
-              }
-              color={textColor}
-              size={adaptiveTextSize}
-              fontFamily={fontFamily}
-              animationStyle={animationStyle}
-              showWordHighlight={showWordHighlight}
-              currentTime={currentAyahLocalSeconds}
-              duration={currentAyah?.duration || 5}
-              highlightColor={wordHighlightColor}
-              highlightGlowColor={wordHighlightGlowColor}
-              dimColor={wordDimColor}
-              highlightStyle={wordHighlightStyle}
-              transitionStyle={wordHighlightTransition}
-              highlightSpeed={wordHighlightSpeed}
-              highlightOffset={wordHighlightOffset}
-              highlightHold={wordHighlightHold}
-              highlightMode={wordHighlightMode}
-              manualTimings={
-                manualWordTimings[getAyahManualTimingKey(currentAyah)] || []
-              }
-              preparedData={currentAyah?.__prepared}
-              ayahNumber={currentAyah?.__isBismillahIntro ? undefined : currentAyah?.numberInSurah}
-              isLandscapeCaption={Boolean((captionLayout as any).isLandscape)}
-              isSquareCaption={Boolean((captionLayout as any).isSquare)}
-              isRemotionRender={isRemotionRender}
-            />
+            {currentAyah?.__isHookIntro ? (
+              <HookIntroText
+                text={currentAyah.text}
+                color={textColor}
+                styleName={currentAyah.hookStyle || "reflection"}
+                progress={clampNumber(
+                  currentAyahLocalSeconds / Math.max(currentAyah.duration || 1, 0.1),
+                  0,
+                  1,
+                )}
+                isLandscapeCaption={Boolean((captionLayout as any).isLandscape)}
+                isSquareCaption={Boolean((captionLayout as any).isSquare)}
+                isRemotionRender={isRemotionRender}
+              />
+            ) : (
+              <AnimatedText
+                text={currentAyah?.text || BISMILLAH_TEXT}
+                color={textColor}
+                size={adaptiveTextSize}
+                fontFamily={fontFamily}
+                animationStyle={animationStyle}
+                showWordHighlight={showWordHighlight}
+                currentTime={currentAyahLocalSeconds}
+                duration={currentAyah?.duration || 5}
+                highlightColor={wordHighlightColor}
+                highlightGlowColor={wordHighlightGlowColor}
+                dimColor={wordDimColor}
+                highlightStyle={wordHighlightStyle}
+                transitionStyle={wordHighlightTransition}
+                highlightSpeed={wordHighlightSpeed}
+                highlightOffset={wordHighlightOffset}
+                highlightHold={wordHighlightHold}
+                highlightMode={wordHighlightMode}
+                manualTimings={
+                  manualWordTimings[getAyahManualTimingKey(currentAyah)] || []
+                }
+                preparedData={currentAyah?.__prepared}
+                ayahNumber={
+                  currentAyah?.__isBismillahIntro
+                    ? undefined
+                    : currentAyah?.numberInSurah
+                }
+                isLandscapeCaption={Boolean((captionLayout as any).isLandscape)}
+                isSquareCaption={Boolean((captionLayout as any).isSquare)}
+                isRemotionRender={isRemotionRender}
+              />
+            )}
 
             {showTafsir &&
+              !currentAyah?.__isHookIntro &&
               !currentAyah?.__isBismillahIntro &&
               (currentAyah?.tafsir || tafsirText) && (
                 <TafsirText
@@ -1221,6 +1295,101 @@ function FadeInVideoLayer({
         opacity,
       }}
     />
+  );
+}
+
+
+function HookIntroText({
+  text,
+  color,
+  styleName,
+  progress,
+  isLandscapeCaption = false,
+  isSquareCaption = false,
+  isRemotionRender = false,
+}: {
+  text: string;
+  color: string;
+  styleName: HookStyle;
+  progress: number;
+  isLandscapeCaption?: boolean;
+  isSquareCaption?: boolean;
+  isRemotionRender?: boolean;
+}) {
+  const safeText = String(text || "").trim();
+  if (!safeText) return null;
+
+  const baseSize = isLandscapeCaption ? 52 : isSquareCaption ? 48 : 58;
+  const scale = isRemotionRender
+    ? 1
+    : 0.96 + easeOutCubic(clampNumber(progress, 0, 1)) * 0.04;
+
+  const accent =
+    styleName === "warning"
+      ? "#facc15"
+      : styleName === "question"
+        ? "#38bdf8"
+        : styleName === "emotional"
+          ? "#fb7185"
+          : "#34d399";
+
+  const prefix =
+    styleName === "warning"
+      ? "انتبه"
+      : styleName === "question"
+        ? "سؤال"
+        : styleName === "emotional"
+          ? "رسالة"
+          : "تأمل";
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: isLandscapeCaption ? 14 : 22,
+        width: "100%",
+        transform: `scale(${scale})`,
+        opacity: isRemotionRender ? 1 : clampNumber(progress * 1.8, 0, 1),
+      }}
+    >
+      <div
+        style={{
+          color: accent,
+          fontFamily: `"Cairo", "IBM Plex Sans Arabic", "Noto Naskh Arabic", sans-serif`,
+          fontSize: isLandscapeCaption ? 22 : 26,
+          fontWeight: 900,
+          letterSpacing: 1,
+          padding: "8px 18px",
+          borderRadius: 999,
+          border: `1px solid ${accent}55`,
+          background: "rgba(0,0,0,0.24)",
+          textShadow: "0 2px 10px rgba(0,0,0,0.9)",
+        }}
+      >
+        {prefix}
+      </div>
+
+      <div
+        style={{
+          color,
+          fontFamily: `"Cairo", "IBM Plex Sans Arabic", "Noto Naskh Arabic", sans-serif`,
+          fontSize: baseSize,
+          lineHeight: 1.35,
+          fontWeight: 950,
+          textAlign: "center",
+          textWrap: "balance" as any,
+          maxWidth: isLandscapeCaption ? "76%" : "86%",
+          textShadow: isRemotionRender
+            ? "0 2px 10px rgba(0,0,0,0.95)"
+            : `0 0 28px rgba(0,0,0,0.95), 0 0 24px ${accent}66`,
+        }}
+      >
+        {safeText}
+      </div>
+    </div>
   );
 }
 
@@ -2596,6 +2765,11 @@ function getAyahManualTimingKey(ayah?: Ayah) {
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+function easeOutCubic(value: number) {
+  const t = clampNumber(value, 0, 1);
+  return 1 - Math.pow(1 - t, 3);
 }
 
 function easeInOutSine(value: number) {

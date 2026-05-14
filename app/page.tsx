@@ -122,6 +122,8 @@ type ExportPresetId =
 
 type ExportQualityId = "draft" | "standard" | "high" | "ultra";
 
+type HookStyle = "reflection" | "question" | "warning" | "emotional";
+
 const EXPORT_QUALITIES: Array<{
   id: ExportQualityId;
   label: string;
@@ -229,6 +231,9 @@ const FALLBACK_PREVIEW_AYAHS: ReelAyah[] = [
     numberInSurah: 1,
   },
 ];
+
+const DEFAULT_BISMILLAH_DURATION_SECONDS = 3.2;
+const BISMILLAH_TEXT = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ";
 
 const PREVIEW_BARS = Array.from({ length: 32 }, (_, index) => ({
   index,
@@ -405,6 +410,11 @@ export default function Home() {
   const [selectedExportQualityId, setSelectedExportQualityId] =
     useState<ExportQualityId>("high");
 
+  const [showHook, setShowHook] = useState(true);
+  const [hookText, setHookText] = useState("توقّف لحظة… هذه الآية لك");
+  const [hookDuration, setHookDuration] = useState("2.5");
+  const [hookStyle, setHookStyle] = useState<HookStyle>("reflection");
+
   const selectedExportPreset = useMemo(() => {
 
     return (
@@ -413,11 +423,6 @@ export default function Home() {
     );
   }, [selectedExportPresetId]);
 
-  const totalVideoDuration = useMemo(() => {
-    return (ayahs as Array<{ duration?: number }>).reduce((total, ayah) => {
-      return total + Math.max(Number(ayah.duration || 0), 0);
-    }, 0);
-  }, [ayahs]);
 
   const selectedExportQuality = useMemo(() => {
     return (
@@ -478,12 +483,24 @@ export default function Home() {
     [selectedAyahs],
   );
 
-  const previewDurationSeconds = useMemo(() => {
+  const safeHookDuration = useMemo(() => {
+    if (!showHook) return 0;
+
+    return clampNumber(Number(hookDuration || 2.5), 1, 4);
+  }, [showHook, hookDuration]);
+
+  const basePreviewDurationSeconds = useMemo(() => {
     return Math.max(
-      previewAyahs.reduce((total, ayah) => total + (ayah.duration || 5), 0),
+      getDurationSecondsWithBismillahIntroForPreview(previewAyahs),
       5,
     );
   }, [previewAyahs]);
+
+  const totalVideoDuration = useMemo(() => {
+    return basePreviewDurationSeconds + safeHookDuration;
+  }, [basePreviewDurationSeconds, safeHookDuration]);
+
+  const previewDurationSeconds = totalVideoDuration;
 
 
   const currentSyncItem = useMemo(
@@ -511,6 +528,10 @@ export default function Home() {
   const previewInputProps = useMemo(
     () => ({
     ayahs: previewAyahs,
+    showHook,
+    hookText,
+    hookDuration: safeHookDuration,
+    hookStyle,
     textColor,
     textSize: Number(textSize),
     fontFamily,
@@ -576,6 +597,10 @@ export default function Home() {
   }),
     [
       previewAyahs,
+      showHook,
+      hookText,
+      safeHookDuration,
+      hookStyle,
       textColor,
       textSize,
       fontFamily,
@@ -1659,6 +1684,10 @@ export default function Home() {
         },
         body: JSON.stringify({
           ayahs: selectedAyahs,
+          showHook,
+          hookText,
+          hookDuration: safeHookDuration,
+          hookStyle,
           textColor,
           textSize: Number(textSize),
           fontFamily,
@@ -2845,6 +2874,67 @@ export default function Home() {
                     title="إعدادات التوقيت"
                     description="تحكم في شريط التقدم والعداد العكسي."
                   >
+                    <div className="mb-4 rounded-[24px] border border-emerald-400/20 bg-emerald-400/10 p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="font-black text-white">Hook Intro</p>
+                          <p className="mt-1 text-xs leading-6 text-neutral-300">
+                            جملة قوية تظهر في أول الفيديو قبل البسملة والآيات لزيادة الاحتفاظ بالمشاهدة.
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-black/30 px-3 py-1 text-[11px] font-black text-emerald-300">
+                          TikTok
+                        </span>
+                      </div>
+
+                      <Toggle
+                        label="تفعيل الهوك في بداية الفيديو"
+                        checked={showHook}
+                        onChange={setShowHook}
+                      />
+
+                      <div>
+                        <label className="mb-2 block text-sm text-neutral-300">
+                          نص الهوك
+                        </label>
+                        <textarea
+                          value={hookText}
+                          onChange={(e) => setHookText(e.target.value)}
+                          placeholder="توقّف لحظة… هذه الآية لك"
+                          className="modern-input min-h-[76px] resize-none leading-7"
+                        />
+                      </div>
+
+                      <SelectBox
+                        label="ستايل الهوك"
+                        value={hookStyle}
+                        onChange={(value) => setHookStyle(value as HookStyle)}
+                      >
+                        <option value="reflection">تأملي</option>
+                        <option value="question">سؤال</option>
+                        <option value="warning">تنبيه</option>
+                        <option value="emotional">مؤثر</option>
+                      </SelectBox>
+
+                      <div>
+                        <label className="mb-2 block text-sm text-neutral-300">
+                          مدة الهوك
+                        </label>
+                        <input
+                          type="range"
+                          min="1"
+                          max="4"
+                          step="0.1"
+                          value={hookDuration}
+                          onChange={(e) => setHookDuration(e.target.value)}
+                          className="w-full"
+                        />
+                        <p className="text-xs text-neutral-400">
+                          {safeHookDuration.toFixed(1)} ثانية
+                        </p>
+                      </div>
+                    </div>
+
                     <Toggle
                       label="إظهار شريط التقدم"
                       checked={showProgressBar}
@@ -4821,6 +4911,55 @@ function getRenderStatusMessage(status: string) {
   if (status === "completed") return "تم التصدير بنجاح";
   if (status === "failed") return "فشل التصدير";
   return "جاري معالجة الفيديو";
+}
+
+function getDurationSecondsWithBismillahIntroForPreview(ayahs: Array<{ text?: string; duration?: number }>) {
+  const rawDurationSeconds = ayahs.reduce((total, ayah) => {
+    return total + Math.max(Number(ayah.duration || 5), 0.1);
+  }, 0);
+
+  const introDuration = Math.max(DEFAULT_BISMILLAH_DURATION_SECONDS, 1.8);
+  const firstText = ayahs[0]?.text || "";
+
+  if (!firstText) {
+    return introDuration;
+  }
+
+  if (isBismillahOnlyForPreview(firstText)) {
+    const restDuration = ayahs.slice(1).reduce((total, ayah) => {
+      return total + Math.max(Number(ayah.duration || 5), 0.1);
+    }, 0);
+
+    return introDuration + restDuration;
+  }
+
+  if (startsWithBismillahForPreview(firstText)) {
+    return rawDurationSeconds;
+  }
+
+  return rawDurationSeconds + introDuration;
+}
+
+function isBismillahOnlyForPreview(text: string) {
+  return normalizeArabicForBismillahForPreview(text) === normalizeArabicForBismillahForPreview(BISMILLAH_TEXT);
+}
+
+function startsWithBismillahForPreview(text: string) {
+  return normalizeArabicForBismillahForPreview(text).startsWith(
+    normalizeArabicForBismillahForPreview(BISMILLAH_TEXT),
+  );
+}
+
+function normalizeArabicForBismillahForPreview(value: string) {
+  return String(value || "")
+    .replace(/﷽/g, "بسم الله الرحمن الرحيم")
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, "")
+    .replace(/[\u06D6-\u06ED۝۞]/g, "")
+    .replace(/[إأآٱا]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه")
+    .replace(/[^\u0600-\u06FF]/g, "")
+    .trim();
 }
 
 function clampNumber(value: number, min: number, max: number) {

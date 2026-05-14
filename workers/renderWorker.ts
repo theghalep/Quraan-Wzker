@@ -39,6 +39,8 @@ const PROGRESS_UPDATE_INTERVAL_MS = 1500;
 const SAFE_RENDER_SCALES = [1, 0.75, 0.5] as const;
 const DEFAULT_RENDER_FONT_FAMILY = "Amiri Quran";
 const DEFAULT_BISMILLAH_DURATION_SECONDS = 3.2;
+const DEFAULT_HOOK_DURATION_SECONDS = 2.5;
+const DEFAULT_HOOK_TEXT = "توقّف لحظة… هذه الآية لك";
 const BISMILLAH_TEXT = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ";
 
 // In local development, Remotion bundle caching hides changes made to
@@ -127,6 +129,12 @@ async function renderQuranVideo({
     1.8,
   );
   const showBismillahIntro = body.showBismillahIntro !== false;
+  const showHook = body.showHook !== false;
+  const hookText = String(body.hookText || DEFAULT_HOOK_TEXT).trim() || DEFAULT_HOOK_TEXT;
+  const hookDuration = showHook
+    ? clampNumber(Number(body.hookDuration || DEFAULT_HOOK_DURATION_SECONDS), 1, 4)
+    : 0;
+  const hookStyle = body.hookStyle || "reflection";
 
   await updateRenderJob(jobId, {
     status: "validating",
@@ -163,11 +171,13 @@ async function renderQuranVideo({
     },
   );
 
-  const totalDurationInSeconds = getDurationSecondsWithBismillahIntro({
-    ayahs,
-    showBismillahIntro,
-    bismillahDuration,
-  });
+  const totalDurationInSeconds =
+    hookDuration +
+    getDurationSecondsWithBismillahIntro({
+      ayahs,
+      showBismillahIntro,
+      bismillahDuration,
+    });
 
   if (totalDurationInSeconds > MAX_DURATION_SECONDS) {
     throw new Error("مدة الفيديو طويلة جدًا. الحد الحالي 10 دقائق.");
@@ -192,6 +202,11 @@ async function renderQuranVideo({
 
   const inputProps = {
     ayahs: renderAyahs,
+
+    showHook,
+    hookText,
+    hookDuration,
+    hookStyle,
 
     textColor: body.textColor || "#ffffff",
     textSize: Number(body.textSize || 72),
@@ -283,6 +298,21 @@ async function renderQuranVideo({
       textSize: inputProps.textSize,
       fontFamily: inputProps.fontFamily,
       ayahs: renderAyahs.length,
+      showHook,
+      hookDuration,
+      hookStyle,
+      backgroundVideoDuration: inputProps.backgroundVideoDuration,
+      totalVideoDuration: inputProps.totalVideoDuration,
+      showTafsir: inputProps.showTafsir,
+      tafsirTextLength: String(inputProps.tafsirText || "").length,
+      positions: {
+        surahNameX: inputProps.surahNameX,
+        surahNameY: inputProps.surahNameY,
+        reciterNameX: inputProps.reciterNameX,
+        reciterNameY: inputProps.reciterNameY,
+        brandNameX: inputProps.brandNameX,
+        brandNameY: inputProps.brandNameY,
+      },
     }),
   );
 
