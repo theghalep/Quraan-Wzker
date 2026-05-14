@@ -374,25 +374,25 @@ export default function Home() {
 
   const [showSurahName, setShowSurahName] = useState(true);
   const [surahNameColor, setSurahNameColor] = useState("#ffffff");
-  const [surahNameSize, setSurahNameSize] = useState("38");
+  const [surahNameSize, setSurahNameSize] = useState("45");
   const [surahNamePosition, setSurahNamePosition] = useState("top");
-  const [surahNameX, setSurahNameX] = useState("15");
+  const [surahNameX, setSurahNameX] = useState("35");
   const [surahNameY, setSurahNameY] = useState("90");
 
   const [showReciterName, setShowReciterName] = useState(true);
   const [reciterNameColor, setReciterNameColor] = useState("#34d399");
-  const [reciterNameSize, setReciterNameSize] = useState("28");
+  const [reciterNameSize, setReciterNameSize] = useState("34");
   const [reciterNamePosition, setReciterNamePosition] = useState("bottom");
-  const [reciterNameX, setReciterNameX] = useState("85");
+  const [reciterNameX, setReciterNameX] = useState("69");
   const [reciterNameY, setReciterNameY] = useState("90");
 
   const [showBrandName, setShowBrandName] = useState(true);
   const [brandName, setBrandName] = useState("وذكر | wzkerq");
   const [brandNameColor, setBrandNameColor] = useState("#ffffff");
-  const [brandNameSize, setBrandNameSize] = useState("28");
+  const [brandNameSize, setBrandNameSize] = useState("35");
   const [brandNamePosition, setBrandNamePosition] = useState("bottom");
   const [brandNameX, setBrandNameX] = useState("50");
-  const [brandNameY, setBrandNameY] = useState("10");
+  const [brandNameY, setBrandNameY] = useState("15");
   const [brandNameStyle, setBrandNameStyle] = useState("glass");
   const [showProgressBar, setShowProgressBar] = useState(true);
   const [showCountdownTimer, setShowCountdownTimer] = useState(true);
