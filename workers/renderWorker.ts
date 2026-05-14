@@ -37,7 +37,7 @@ const ASSET_CHECK_CONCURRENCY = Number(
 );
 const PROGRESS_UPDATE_INTERVAL_MS = 1500;
 const SAFE_RENDER_SCALES = [1, 0.75, 0.5] as const;
-const DEFAULT_RENDER_FONT_FAMILY = "KFGQPC Uthmanic Script HAFS";
+const DEFAULT_RENDER_FONT_FAMILY = "Amiri Quran";
 const DEFAULT_BISMILLAH_DURATION_SECONDS = 3.2;
 const BISMILLAH_TEXT = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ";
 
@@ -199,6 +199,8 @@ async function renderQuranVideo({
 
     backgroundStyle: body.backgroundStyle || "emerald",
     backgroundVideoUrl: body.backgroundVideoUrl,
+    backgroundVideoDuration: Number(body.backgroundVideoDuration || 0),
+    totalVideoDuration: Number(totalDurationInSeconds || body.totalVideoDuration || 0),
     backgroundType: body.backgroundType || "video",
 
     isRemotionRender: true,
@@ -223,23 +225,34 @@ async function renderQuranVideo({
     bismillahAudioUrl,
     bismillahDuration,
 
+    showTafsir: body.showTafsir ?? false,
+    tafsirText: body.tafsirText || "",
+    tafsirColor: body.tafsirColor || "rgba(255,255,255,0.88)",
+    tafsirSize: Number(body.tafsirSize || 24),
+
     showSurahName: body.showSurahName ?? true,
     surahName: body.surahName || "",
     surahNameColor: body.surahNameColor || "#ffffff",
     surahNameSize: Number(body.surahNameSize || 38),
     surahNamePosition: body.surahNamePosition || "top",
+    surahNameX: Number(body.surahNameX ?? 15),
+    surahNameY: Number(body.surahNameY ?? 90),
 
     showReciterName: body.showReciterName ?? true,
     reciter: body.reciter || "",
     reciterNameColor: body.reciterNameColor || "#34d399",
     reciterNameSize: Number(body.reciterNameSize || 28),
     reciterNamePosition: body.reciterNamePosition || "bottom",
+    reciterNameX: Number(body.reciterNameX ?? 85),
+    reciterNameY: Number(body.reciterNameY ?? 90),
 
     showBrandName: body.showBrandName ?? true,
     brandName: body.brandName || "وذكر | wzkerq",
     brandNameColor: body.brandNameColor || "#ffffff",
     brandNameSize: Number(body.brandNameSize || 24),
     brandNamePosition: body.brandNamePosition || "bottom",
+    brandNameX: Number(body.brandNameX ?? 50),
+    brandNameY: Number(body.brandNameY ?? 10),
     brandNameStyle: body.brandNameStyle || "glass",
 
     showProgressBar: body.showProgressBar ?? true,

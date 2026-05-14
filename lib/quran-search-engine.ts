@@ -4,6 +4,7 @@ export type QuranAyah = {
   surahEnglishName: string;
   numberInSurah: number;
   text: string;
+  tafsir?: string;
 };
 
 export type QuranScoreBreakdown = {

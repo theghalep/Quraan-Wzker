@@ -28,6 +28,7 @@ type ReelAyah = {
   audio: string;
   duration: number;
   numberInSurah: number;
+  tafsir?: string;
 };
 
 type AiSuggestion = {
@@ -296,11 +297,12 @@ export default function Home() {
   const [exporting, setExporting] = useState(false);
 
   const [textColor, setTextColor] = useState("#ffffff");
-  const [textSize, setTextSize] = useState("82");
-  const [fontFamily, setFontFamily] = useState("KFGQPC Uthmanic Script HAFS");
+  const [textSize, setTextSize] = useState("62");
+  const [fontFamily, setFontFamily] = useState("Amiri Quran");
 
   const [backgroundStyle, setBackgroundStyle] = useState("emerald");
   const [backgroundVideoUrl, setBackgroundVideoUrl] = useState("");
+  const [backgroundVideoDuration, setBackgroundVideoDuration] = useState(0);
   const [backgroundType, setBackgroundType] = useState<"video" | "image">(
     "video",
   );
@@ -315,6 +317,12 @@ export default function Home() {
   const [textPosition, setTextPosition] = useState("center");
   const [animationStyle, setAnimationStyle] = useState("slide");
   const [wordSpeed, setWordSpeed] = useState("normal");
+
+  const [showTafsir, setShowTafsir] = useState(true);
+  const [tafsirText, setTafsirText] = useState("تفسير مختصر يظهر هنا أسفل الآية، ويمكن لاحقًا جلبه تلقائيًا لكل آية.");
+  const [tafsirColor, setTafsirColor] = useState("#ffffff");
+  const [tafsirSize, setTafsirSize] = useState("17");
+  const [tafsirSource, setTafsirSource] = useState("muyassar");
 
   const [showWordHighlight, setShowWordHighlight] = useState(true);
   const [wordHighlightColor, setWordHighlightColor] = useState("#34d399");
@@ -363,17 +371,23 @@ export default function Home() {
   const [surahNameColor, setSurahNameColor] = useState("#ffffff");
   const [surahNameSize, setSurahNameSize] = useState("38");
   const [surahNamePosition, setSurahNamePosition] = useState("top");
+  const [surahNameX, setSurahNameX] = useState("15");
+  const [surahNameY, setSurahNameY] = useState("90");
 
   const [showReciterName, setShowReciterName] = useState(true);
   const [reciterNameColor, setReciterNameColor] = useState("#34d399");
   const [reciterNameSize, setReciterNameSize] = useState("28");
   const [reciterNamePosition, setReciterNamePosition] = useState("bottom");
+  const [reciterNameX, setReciterNameX] = useState("85");
+  const [reciterNameY, setReciterNameY] = useState("90");
 
   const [showBrandName, setShowBrandName] = useState(true);
   const [brandName, setBrandName] = useState("وذكر | wzkerq");
   const [brandNameColor, setBrandNameColor] = useState("#ffffff");
   const [brandNameSize, setBrandNameSize] = useState("28");
   const [brandNamePosition, setBrandNamePosition] = useState("bottom");
+  const [brandNameX, setBrandNameX] = useState("50");
+  const [brandNameY, setBrandNameY] = useState("10");
   const [brandNameStyle, setBrandNameStyle] = useState("glass");
   const [showProgressBar, setShowProgressBar] = useState(true);
   const [showCountdownTimer, setShowCountdownTimer] = useState(true);
@@ -392,13 +406,18 @@ export default function Home() {
     useState<ExportQualityId>("high");
 
   const selectedExportPreset = useMemo(() => {
-  const PreviewVideo: any = Video;
 
     return (
       EXPORT_PRESETS.find((preset) => preset.id === selectedExportPresetId) ||
       EXPORT_PRESETS[0]
     );
   }, [selectedExportPresetId]);
+
+  const totalVideoDuration = useMemo(() => {
+    return ayahs.reduce((total, ayah) => {
+      return total + Math.max(Number(ayah.duration || 0), 0);
+    }, 0);
+  }, [ayahs]);
 
   const selectedExportQuality = useMemo(() => {
     return (
@@ -497,11 +516,17 @@ export default function Home() {
     fontFamily,
     backgroundStyle,
     backgroundVideoUrl,
+    backgroundVideoDuration,
+    totalVideoDuration,
     backgroundType,
     textPosition,
     animationStyle,
     wordSpeed,
     showWordHighlight,
+    showTafsir,
+    tafsirText,
+    tafsirColor,
+    tafsirSize: Number(tafsirSize),
     wordHighlightColor,
     wordHighlightGlowColor,
     wordDimColor,
@@ -517,16 +542,22 @@ export default function Home() {
     surahNameColor,
     surahNameSize: Number(surahNameSize),
     surahNamePosition,
+    surahNameX: Number(surahNameX),
+    surahNameY: Number(surahNameY),
     showReciterName,
     reciter: selectedReciterName,
     reciterNameColor,
     reciterNameSize: Number(reciterNameSize),
     reciterNamePosition,
+    reciterNameX: Number(reciterNameX),
+    reciterNameY: Number(reciterNameY),
     showBrandName,
     brandName,
     brandNameColor,
     brandNameSize: Number(brandNameSize),
     brandNamePosition,
+    brandNameX: Number(brandNameX),
+    brandNameY: Number(brandNameY),
     brandNameStyle,
 
     showProgressBar,
@@ -550,11 +581,17 @@ export default function Home() {
       fontFamily,
       backgroundStyle,
       backgroundVideoUrl,
+      backgroundVideoDuration,
+      totalVideoDuration,
       backgroundType,
       textPosition,
       animationStyle,
       wordSpeed,
       showWordHighlight,
+      showTafsir,
+      tafsirText,
+      tafsirColor,
+      tafsirSize,
       wordHighlightColor,
       wordHighlightGlowColor,
       wordDimColor,
@@ -570,16 +607,22 @@ export default function Home() {
       surahNameColor,
       surahNameSize,
       surahNamePosition,
+      surahNameX,
+      surahNameY,
       showReciterName,
       selectedReciterName,
       reciterNameColor,
       reciterNameSize,
       reciterNamePosition,
+      reciterNameX,
+      reciterNameY,
       showBrandName,
       brandName,
       brandNameColor,
       brandNameSize,
       brandNamePosition,
+      brandNameX,
+      brandNameY,
       brandNameStyle,
       showProgressBar,
       showCountdownTimer,
@@ -1044,6 +1087,58 @@ export default function Home() {
     }
   }
 
+  useEffect(() => {
+    if (!backgroundVideoUrl) {
+      setBackgroundVideoDuration(0);
+      return;
+    }
+
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.src = backgroundVideoUrl;
+    video.muted = true;
+
+    const handleLoadedMetadata = () => {
+      const duration = Number(video.duration || 0);
+      setBackgroundVideoDuration(Number.isFinite(duration) ? duration : 0);
+    };
+
+    const handleError = () => {
+      console.log("BACKGROUND_DURATION_MEASURE_ERROR");
+      setBackgroundVideoDuration(0);
+    };
+
+    video.addEventListener("loadedmetadata", handleLoadedMetadata);
+    video.addEventListener("error", handleError);
+
+    return () => {
+      video.removeEventListener("loadedmetadata", handleLoadedMetadata);
+      video.removeEventListener("error", handleError);
+      video.removeAttribute("src");
+      video.load();
+    };
+  }, [backgroundVideoUrl]);
+
+  async function loadTafsirDirect(chapterNumber: string | number, ayahNumber: string | number) {
+    try {
+      const response = await fetch(
+        `/api/tafsir?chapter=${encodeURIComponent(String(chapterNumber))}&ayah=${encodeURIComponent(String(ayahNumber))}&source=${encodeURIComponent(tafsirSource)}`,
+        { cache: "no-store" },
+      );
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || !data.tafsir) {
+        return "";
+      }
+
+      return String(data.tafsir || "").trim();
+    } catch (error) {
+      console.log("TAFSIR_LOAD_ERROR:", error);
+      return "";
+    }
+  }
+
   async function uploadCustomBackground(file: File) {
     try {
       setUploadingBackground(true);
@@ -1306,13 +1401,17 @@ export default function Home() {
 
       const ayahsWithDurations = await Promise.all(
         selected.map(async (ayah) => {
-          const duration = await getAudioDuration(ayah.audio || "");
+          const [duration, tafsir] = await Promise.all([
+            getAudioDuration(ayah.audio || ""),
+            loadTafsirDirect(nextChapter, ayah.numberInSurah),
+          ]);
 
           return {
             text: ayah.text,
             audio: ayah.audio || "",
             duration,
             numberInSurah: ayah.numberInSurah,
+            tafsir,
           };
         }),
       );
@@ -1360,13 +1459,17 @@ export default function Home() {
 
       const ayahsWithDurations = await Promise.all(
         selected.map(async (ayah) => {
-          const duration = await getAudioDuration(ayah.audio || "");
+          const [duration, tafsir] = await Promise.all([
+            getAudioDuration(ayah.audio || ""),
+            loadTafsirDirect(chapter, ayah.numberInSurah),
+          ]);
 
           return {
             text: ayah.text,
             audio: ayah.audio || "",
             duration,
             numberInSurah: ayah.numberInSurah,
+            tafsir,
           };
         }),
       );
@@ -1561,6 +1664,8 @@ export default function Home() {
           fontFamily,
           backgroundStyle,
           backgroundVideoUrl,
+          backgroundVideoDuration,
+          totalVideoDuration,
           backgroundType,
           exportPreset: selectedExportPreset.id,
           exportWidth: selectedExportPreset.width,
@@ -1571,6 +1676,10 @@ export default function Home() {
           animationStyle,
           wordSpeed,
           showWordHighlight,
+          showTafsir,
+          tafsirText,
+          tafsirColor,
+          tafsirSize: Number(tafsirSize),
           wordHighlightColor,
           wordHighlightGlowColor,
           wordDimColor,
@@ -1586,16 +1695,22 @@ export default function Home() {
           surahNameColor,
           surahNameSize: Number(surahNameSize),
           surahNamePosition,
+          surahNameX: Number(surahNameX),
+          surahNameY: Number(surahNameY),
           showReciterName,
           reciter: selectedReciterName,
           reciterNameColor,
           reciterNameSize: Number(reciterNameSize),
           reciterNamePosition,
+          reciterNameX: Number(reciterNameX),
+          reciterNameY: Number(reciterNameY),
           showBrandName,
           brandName,
           brandNameColor,
           brandNameSize: Number(brandNameSize),
           brandNamePosition,
+          brandNameX: Number(brandNameX),
+          brandNameY: Number(brandNameY),
           brandNameStyle,
 
           showProgressBar,
@@ -2392,8 +2507,8 @@ export default function Home() {
                         </label>
                         <input
                           type="range"
-                          min="42"
-                          max="110"
+                          min="36"
+                          max="90"
                           value={textSize}
                           onChange={(e) => setTextSize(e.target.value)}
                           className="w-full"
@@ -2451,6 +2566,55 @@ export default function Home() {
                       <option value="normal">متوسطة</option>
                       <option value="fast">سريعة</option>
                     </SelectBox>
+
+                    <div className="rounded-[24px] border border-white/10 bg-black/25 p-4">
+                      <Toggle
+                        label="إظهار التفسير أسفل الآية"
+                        checked={showTafsir}
+                        onChange={setShowTafsir}
+                      />
+
+                      <div className="mt-4">
+                        <SelectBox
+                          label="مصدر التفسير"
+                          value={tafsirSource}
+                          onChange={setTafsirSource}
+                        >
+                          <option value="muyassar">التفسير الميسر</option>
+                          <option value="jalalayn">تفسير الجلالين</option>
+                          <option value="muyassarCloud">الميسر - مصدر بديل</option>
+                        </SelectBox>
+                      </div>
+
+                      <div className="mt-4">
+                        <label className="mb-2 block text-sm text-neutral-300">
+                          نص تفسير احتياطي
+                        </label>
+                        <textarea
+                          value={tafsirText}
+                          onChange={(e) => setTafsirText(e.target.value)}
+                          className="modern-input min-h-[92px] resize-none leading-7"
+                          placeholder="يظهر فقط لو لم يتوفر تفسير تلقائي للآية"
+                        />
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-2 gap-3">
+                        <ColorInput
+                          label="لون التفسير"
+                          value={tafsirColor}
+                          onChange={setTafsirColor}
+                        />
+                        <RangeInput
+                          label="حجم التفسير"
+                          value={tafsirSize}
+                          onChange={setTafsirSize}
+                          min="14"
+                          max="34"
+                          step="1"
+                          suffix="px"
+                        />
+                      </div>
+                    </div>
                   </Panel>
                 )}
 
@@ -2505,7 +2669,7 @@ export default function Home() {
                         </div>
 
                         <SelectBox
-                          label="المكان"
+                          label="المكان السريع"
                           value={surahNamePosition}
                           onChange={setSurahNamePosition}
                         >
@@ -2513,6 +2677,27 @@ export default function Home() {
                           <option value="center">منتصف</option>
                           <option value="bottom">أسفل</option>
                         </SelectBox>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <RangeInput
+                            label="X أفقي"
+                            value={surahNameX}
+                            onChange={setSurahNameX}
+                            min="0"
+                            max="100"
+                            step="1"
+                            suffix="%"
+                          />
+                          <RangeInput
+                            label="Y رأسي"
+                            value={surahNameY}
+                            onChange={setSurahNameY}
+                            min="0"
+                            max="100"
+                            step="1"
+                            suffix="%"
+                          />
+                        </div>
                       </CompactSection>
                     )}
 
@@ -2541,7 +2726,7 @@ export default function Home() {
                         </div>
 
                         <SelectBox
-                          label="المكان"
+                          label="المكان السريع"
                           value={reciterNamePosition}
                           onChange={setReciterNamePosition}
                         >
@@ -2549,6 +2734,27 @@ export default function Home() {
                           <option value="center">منتصف</option>
                           <option value="bottom">أسفل</option>
                         </SelectBox>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <RangeInput
+                            label="X أفقي"
+                            value={reciterNameX}
+                            onChange={setReciterNameX}
+                            min="0"
+                            max="100"
+                            step="1"
+                            suffix="%"
+                          />
+                          <RangeInput
+                            label="Y رأسي"
+                            value={reciterNameY}
+                            onChange={setReciterNameY}
+                            min="0"
+                            max="100"
+                            step="1"
+                            suffix="%"
+                          />
+                        </div>
                       </CompactSection>
                     )}
 
@@ -2589,7 +2795,7 @@ export default function Home() {
 
                         <div className="grid grid-cols-2 gap-3">
                           <SelectBox
-                            label="المكان"
+                            label="المكان السريع"
                             value={brandNamePosition}
                             onChange={setBrandNamePosition}
                           >
@@ -2607,6 +2813,27 @@ export default function Home() {
                             <option value="glass">زجاجي</option>
                             <option value="glow">مضيء</option>
                           </SelectBox>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <RangeInput
+                            label="X أفقي"
+                            value={brandNameX}
+                            onChange={setBrandNameX}
+                            min="0"
+                            max="100"
+                            step="1"
+                            suffix="%"
+                          />
+                          <RangeInput
+                            label="Y رأسي"
+                            value={brandNameY}
+                            onChange={setBrandNameY}
+                            min="0"
+                            max="100"
+                            step="1"
+                            suffix="%"
+                          />
                         </div>
                       </CompactSection>
                     )}
@@ -3951,6 +4178,43 @@ function ColorInput({
         onChange={(e) => onChange(e.target.value)}
         className="h-14 w-full rounded-2xl border border-white/10 bg-black/35 p-2"
       />
+    </div>
+  );
+}
+
+function RangeInput({
+  label,
+  value,
+  onChange,
+  min = "0",
+  max = "100",
+  step = "1",
+  suffix = "",
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  min?: string;
+  max?: string;
+  step?: string;
+  suffix?: string;
+}) {
+  return (
+    <div>
+      <label className="mb-2 block text-sm text-neutral-300">{label}</label>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full"
+      />
+      <p className="mt-1 text-xs text-neutral-400">
+        {value}
+        {suffix}
+      </p>
     </div>
   );
 }
