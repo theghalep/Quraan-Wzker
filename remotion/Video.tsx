@@ -369,12 +369,6 @@ function BrowserPreviewVideo(props: Props) {
 
     video.playbackRate = 1;
 
-    try {
-      video.playbackRate = smartBackgroundPlaybackRate;
-    } catch {
-      // ignore playbackRate assignment errors
-    }
-
     if (previewPlaying && previewTime < totalVideoDuration) {
       video.play().catch(() => undefined);
     } else {
