@@ -414,10 +414,10 @@ export default function Home() {
   }, [selectedExportPresetId]);
 
   const totalVideoDuration = useMemo(() => {
-    return reelAyahs.reduce((total, ayah) => {
+    return (ayahs as Array<{ duration?: number }>).reduce((total, ayah) => {
       return total + Math.max(Number(ayah.duration || 0), 0);
     }, 0);
-  }, [reelAyahs]);
+  }, [ayahs]);
 
   const selectedExportQuality = useMemo(() => {
     return (
