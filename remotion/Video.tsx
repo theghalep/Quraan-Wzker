@@ -742,6 +742,8 @@ function VideoCanvas({
   isRemotionRender: boolean;
   audioLayer: React.ReactNode;
   backgroundVideoRef?: React.RefObject<HTMLVideoElement | null>;
+  backgroundVideoDuration?: number;
+  totalVideoDuration?: number;
   previewPlaying?: boolean;
 }) {
 
