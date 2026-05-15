@@ -252,46 +252,16 @@ type BackgroundCard = {
   image: string;
 };
 
-const IMAGE_BACKGROUND_CARDS: BackgroundCard[] = [
-  {
-    id: "image-mosque-night",
-    title: "مسجد ليلي",
-    description: "صورة ثابتة هادئة كأساس للريل",
-    image: "/backgrounds/mosque-night.jpg",
-  },
-  {
-    id: "image-kaaba",
-    title: "الكعبة",
-    description: "خلفية روحانية ثابتة",
-    image: "/backgrounds/kaaba.jpg",
-  },
-  {
-    id: "image-quran",
-    title: "مصحف",
-    description: "صورة مصحف بإضاءة ناعمة",
-    image: "/backgrounds/quran.jpg",
-  },
-  {
-    id: "image-clouds",
-    title: "سماء هادئة",
-    description: "سحاب وإضاءة مريحة",
-    image: "/backgrounds/clouds.jpg",
-  },
-  {
-    id: "image-nature",
-    title: "طبيعة",
-    description: "خلفية طبيعية ثابتة ومريحة",
-    image: "/backgrounds/nature.jpg",
-  },
-  {
-    id: "image-abstract",
-    title: "تدرج سينمائي",
-    description: "خلفية داكنة مناسبة للنص",
-    image: "/backgrounds/abstract-dark.jpg",
-  },
-];
+// Keep this list empty unless these exact files exist in public/backgrounds.
+// The real selectable images are loaded from public/backgrounds/gallery via /api/background-gallery.
+const IMAGE_BACKGROUND_CARDS: BackgroundCard[] = [];
 
-const DEFAULT_IMAGE_BACKGROUND = IMAGE_BACKGROUND_CARDS[0];
+const DEFAULT_IMAGE_BACKGROUND: BackgroundCard = {
+  id: "default-gradient",
+  title: "خلفية افتراضية",
+  description: "خلفية داكنة آمنة تظهر إلى أن تختار صورة من المعرض",
+  image: "",
+};
 
 const VIDEO_BACKGROUND_CARDS: BackgroundCard[] = [
   {
@@ -350,7 +320,7 @@ export default function Home() {
   const [exporting, setExporting] = useState(false);
 
   const [textColor, setTextColor] = useState("#ffffff");
-  const [textSize, setTextSize] = useState("62");
+  const [textSize, setTextSize] = useState("82");
   const [fontFamily, setFontFamily] = useState("Amiri Quran");
 
   const [backgroundStyle, setBackgroundStyle] = useState(DEFAULT_IMAGE_BACKGROUND.id);
@@ -376,7 +346,7 @@ export default function Home() {
   const [showTafsir, setShowTafsir] = useState(true);
   const [tafsirText, setTafsirText] = useState("تفسير مختصر يظهر هنا أسفل الآية، ويمكن لاحقًا جلبه تلقائيًا لكل آية.");
   const [tafsirColor, setTafsirColor] = useState("#ffffff");
-  const [tafsirSize, setTafsirSize] = useState("17");
+  const [tafsirSize, setTafsirSize] = useState("30");
   const [tafsirSource, setTafsirSource] = useState("muyassar");
 
   const [showWordHighlight, setShowWordHighlight] = useState(true);
@@ -424,25 +394,25 @@ export default function Home() {
 
   const [showSurahName, setShowSurahName] = useState(true);
   const [surahNameColor, setSurahNameColor] = useState("#ffffff");
-  const [surahNameSize, setSurahNameSize] = useState("38");
+  const [surahNameSize, setSurahNameSize] = useState("52");
   const [surahNamePosition, setSurahNamePosition] = useState("top");
-  const [surahNameX, setSurahNameX] = useState("15");
-  const [surahNameY, setSurahNameY] = useState("90");
+  const [surahNameX, setSurahNameX] = useState("34");
+  const [surahNameY, setSurahNameY] = useState("88");
 
   const [showReciterName, setShowReciterName] = useState(true);
   const [reciterNameColor, setReciterNameColor] = useState("#34d399");
-  const [reciterNameSize, setReciterNameSize] = useState("28");
+  const [reciterNameSize, setReciterNameSize] = useState("46");
   const [reciterNamePosition, setReciterNamePosition] = useState("bottom");
-  const [reciterNameX, setReciterNameX] = useState("85");
-  const [reciterNameY, setReciterNameY] = useState("90");
+  const [reciterNameX, setReciterNameX] = useState("66");
+  const [reciterNameY, setReciterNameY] = useState("88");
 
   const [showBrandName, setShowBrandName] = useState(true);
   const [brandName, setBrandName] = useState("وذكر | wzkerq");
   const [brandNameColor, setBrandNameColor] = useState("#ffffff");
-  const [brandNameSize, setBrandNameSize] = useState("28");
+  const [brandNameSize, setBrandNameSize] = useState("36");
   const [brandNamePosition, setBrandNamePosition] = useState("bottom");
   const [brandNameX, setBrandNameX] = useState("50");
-  const [brandNameY, setBrandNameY] = useState("10");
+  const [brandNameY, setBrandNameY] = useState("8");
   const [brandNameStyle, setBrandNameStyle] = useState("glass");
   const [showProgressBar, setShowProgressBar] = useState(true);
   const [showCountdownTimer, setShowCountdownTimer] = useState(true);
@@ -1799,7 +1769,7 @@ export default function Home() {
           textSize: Number(textSize),
           fontFamily,
           backgroundStyle,
-          backgroundVideoUrl,
+          backgroundVideoUrl: normalizeBrowserAssetUrl(backgroundVideoUrl),
           backgroundVideoDuration,
           totalVideoDuration,
           backgroundType,
@@ -5075,6 +5045,55 @@ function getAudioDuration(src: string): Promise<number> {
       resolve(5);
     });
   });
+}
+
+
+function normalizeBrowserAssetUrl(url: string) {
+  const value = String(url || "").trim();
+
+  if (!value) return "";
+  if (typeof window === "undefined") return value;
+
+  if (value.startsWith("file:")) {
+    try {
+      const decoded = decodeURIComponent(value);
+      const normalizedPath = decoded.replace(/\\/g, "/");
+      const publicIndex = normalizedPath.lastIndexOf("/public/");
+
+      if (publicIndex >= 0) {
+        const publicPath = normalizedPath.slice(publicIndex + "/public".length);
+        return `${window.location.origin}${publicPath}`;
+      }
+    } catch {
+      return value;
+    }
+
+    return value;
+  }
+
+  if (value.startsWith("/")) {
+    return `${window.location.origin}${value}`;
+  }
+
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      const parsed = new URL(value);
+      const isLocalhost =
+        parsed.hostname === "localhost" ||
+        parsed.hostname === "127.0.0.1" ||
+        parsed.hostname === "0.0.0.0";
+
+      if (isLocalhost && window.location.hostname !== parsed.hostname) {
+        return `${window.location.origin}${parsed.pathname}${parsed.search}`;
+      }
+    } catch {
+      return value;
+    }
+
+    return value;
+  }
+
+  return value;
 }
 
 function sleep(ms: number) {

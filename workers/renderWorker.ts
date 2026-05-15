@@ -123,12 +123,16 @@ async function renderQuranVideo({
     "http://ec2-16-171-195-194.eu-north-1.compute.amazonaws.com";
 
   const publicSiteUrl = siteUrl.replace(/\/$/, "");
-  const bismillahAudioUrl = `${publicSiteUrl}/audio/bismillah.mp3`;
+  const bismillahAudioUrl = await resolvePublicFileUrl({
+    relativePath: "audio/bismillah.mp3",
+    publicSiteUrl,
+  });
   const bismillahDuration = Math.max(
     Number(body.bismillahDuration || DEFAULT_BISMILLAH_DURATION_SECONDS),
     1.8,
   );
-  const showBismillahIntro = body.showBismillahIntro !== false;
+  const showBismillahIntro =
+    body.showBismillahIntro !== false && Boolean(bismillahAudioUrl);
   const showHook = body.showHook !== false;
   const hookText = String(body.hookText || DEFAULT_HOOK_TEXT).trim() || DEFAULT_HOOK_TEXT;
   const hookDuration = showHook
@@ -146,7 +150,7 @@ async function renderQuranVideo({
     throw new Error("لا توجد آيات للتصدير");
   }
 
-  const normalizedBackgroundUrl = normalizePublicAssetUrl(
+  const normalizedBackgroundUrl = await normalizePublicAssetUrl(
     body.backgroundVideoUrl,
     publicSiteUrl,
   );
@@ -214,7 +218,7 @@ async function renderQuranVideo({
     hookStyle,
 
     textColor: body.textColor || "#ffffff",
-    textSize: Number(body.textSize || 72),
+    textSize: Math.max(Number(body.textSize || 82), 78),
     fontFamily: normalizeRenderFontFamily(body.fontFamily),
 
     backgroundStyle: body.backgroundStyle || "emerald",
@@ -248,31 +252,31 @@ async function renderQuranVideo({
     showTafsir: body.showTafsir ?? false,
     tafsirText: body.tafsirText || "",
     tafsirColor: body.tafsirColor || "rgba(255,255,255,0.88)",
-    tafsirSize: Number(body.tafsirSize || 24),
+    tafsirSize: Math.max(Number(body.tafsirSize || 30), 28),
 
     showSurahName: body.showSurahName ?? true,
     surahName: body.surahName || "",
     surahNameColor: body.surahNameColor || "#ffffff",
-    surahNameSize: Number(body.surahNameSize || 38),
+    surahNameSize: Number(body.surahNameSize || 52),
     surahNamePosition: body.surahNamePosition || "top",
-    surahNameX: Number(body.surahNameX ?? 15),
-    surahNameY: Number(body.surahNameY ?? 90),
+    surahNameX: Number(body.surahNameX ?? 34),
+    surahNameY: Number(body.surahNameY ?? 88),
 
     showReciterName: body.showReciterName ?? true,
     reciter: body.reciter || "",
     reciterNameColor: body.reciterNameColor || "#34d399",
-    reciterNameSize: Number(body.reciterNameSize || 28),
+    reciterNameSize: Number(body.reciterNameSize || 46),
     reciterNamePosition: body.reciterNamePosition || "bottom",
-    reciterNameX: Number(body.reciterNameX ?? 85),
-    reciterNameY: Number(body.reciterNameY ?? 90),
+    reciterNameX: Number(body.reciterNameX ?? 66),
+    reciterNameY: Number(body.reciterNameY ?? 88),
 
     showBrandName: body.showBrandName ?? true,
     brandName: body.brandName || "وذكر | wzkerq",
     brandNameColor: body.brandNameColor || "#ffffff",
-    brandNameSize: Number(body.brandNameSize || 24),
+    brandNameSize: Number(body.brandNameSize || 36),
     brandNamePosition: body.brandNamePosition || "bottom",
     brandNameX: Number(body.brandNameX ?? 50),
-    brandNameY: Number(body.brandNameY ?? 10),
+    brandNameY: Number(body.brandNameY ?? 8),
     brandNameStyle: body.brandNameStyle || "glass",
 
     showProgressBar: body.showProgressBar ?? true,
@@ -602,18 +606,92 @@ function getAssetCheckConcurrency() {
   return 2;
 }
 
-function normalizePublicAssetUrl(url: string, publicSiteUrl: string) {
+async function normalizePublicAssetUrl(url: string, publicSiteUrl: string) {
   const value = String(url || "").trim();
+  const site = publicSiteUrl.replace(/\/$/, "");
 
   if (!value) return "";
-  if (/^https?:\/\//i.test(value)) return value;
-  if (value.startsWith("file:")) return value;
 
-  if (value.startsWith("/")) {
-    return `${publicSiteUrl.replace(/\/$/, "")}${value}`;
+  // Important: Do not return file:// URLs for image/video backgrounds.
+  // Chromium inside Remotion can fail to decode file:// image sources on Windows.
+  // Public assets must stay as HTTP URLs served by the running Next.js app.
+  if (value.startsWith("file:")) {
+    try {
+      const decoded = decodeURIComponent(value);
+      const normalizedPath = decoded.replace(/\\/g, "/");
+      const publicIndex = normalizedPath.lastIndexOf("/public/");
+
+      if (publicIndex >= 0) {
+        const publicPath = normalizedPath.slice(publicIndex + "/public".length);
+        return `${site}${publicPath}`;
+      }
+    } catch {
+      return value;
+    }
+
+    return value;
   }
 
-  return `${publicSiteUrl.replace(/\/$/, "")}/${value.replace(/^\/+/, "")}`;
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      const parsed = new URL(value);
+      const isLocalhost =
+        parsed.hostname === "localhost" ||
+        parsed.hostname === "127.0.0.1" ||
+        parsed.hostname === "0.0.0.0";
+
+      if (isLocalhost) {
+        return `${site}${parsed.pathname}${parsed.search}`;
+      }
+    } catch {
+      return value;
+    }
+
+    return value;
+  }
+
+  if (value.startsWith("/")) {
+    return `${site}${value}`;
+  }
+
+  return `${site}/${value.replace(/^\/+/, "")}`;
+}
+
+async function resolvePublicFileUrl({
+  relativePath,
+  publicSiteUrl,
+}: {
+  relativePath: string;
+  publicSiteUrl: string;
+}) {
+  const cleanRelativePath = String(relativePath || "")
+    .replace(/^https?:\/\/[^/]+/i, "")
+    .replace(/^\/+/, "")
+    .replace(/^public\//, "");
+
+  if (!cleanRelativePath) return "";
+
+  const site = publicSiteUrl.replace(/\/$/, "");
+  const localPath = path.join(process.cwd(), "public", cleanRelativePath);
+
+  try {
+    const fileStat = await stat(localPath);
+
+    if (fileStat.isFile()) {
+      // Remotion renderer accepts HTTP/HTTPS assets. Do not pass file:// URLs;
+      // Chromium/renderer can reject them, especially on Windows.
+      return `${site}/${cleanRelativePath}`;
+    }
+  } catch {
+    // In production, public assets may still be served by the Next.js server.
+  }
+
+  if (site.includes("localhost") || site.includes("127.0.0.1")) {
+    // Avoid local 404s if the optional asset is missing.
+    return "";
+  }
+
+  return `${site}/${cleanRelativePath}`;
 }
 
 async function assertAssetAvailable(url: string, label: string): Promise<void> {
