@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import path from "path";
+import { unlink } from "fs/promises";
 import { renderQueue } from "@/lib/queue/renderQueue";
 import {
   getRecentRenderJobs,
   getRenderJob,
   updateRenderJob,
+  cancelRenderJob,
 } from "@/lib/queue/renderJobStore";
 
 export const runtime = "nodejs";
@@ -16,7 +19,8 @@ type RenderJobStatus =
   | "bundling"
   | "rendering"
   | "completed"
-  | "failed";
+  | "failed"
+  | "cancelled";
 
 type ExportSettings = {
   preset: string;
@@ -306,6 +310,86 @@ export async function POST(request: NextRequest) {
   }
 }
 
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const jobId = request.nextUrl.searchParams.get("jobId");
+
+    if (!jobId) {
+      return NextResponse.json(
+        { success: false, message: "معرف التصدير غير موجود" },
+        { status: 400 },
+      );
+    }
+
+    const redisJob = await getRenderJob(jobId);
+    const bullJob = await renderQueue.getJob(jobId);
+
+    if (!redisJob && !bullJob) {
+      return NextResponse.json(
+        { success: false, message: "لم يتم العثور على مهمة التصدير" },
+        { status: 404 },
+      );
+    }
+
+    await cancelRenderJob(jobId);
+
+    const fileNameToDelete = redisJob?.fileName || bullJob?.returnvalue?.fileName || "";
+    if (fileNameToDelete && !fileNameToDelete.includes("..") && !fileNameToDelete.includes("/")) {
+      await unlink(path.join(process.cwd(), "public", "exports", fileNameToDelete)).catch(() => undefined);
+    }
+
+    let removedFromQueue = false;
+    let wasActive = false;
+
+    if (bullJob) {
+      try {
+        wasActive = await bullJob.isActive();
+      } catch {
+        wasActive = false;
+      }
+
+      try {
+        await bullJob.discard();
+      } catch {
+        // ignore discard errors
+      }
+
+      try {
+        if (!wasActive) {
+          await bullJob.remove();
+          removedFromQueue = true;
+        }
+      } catch {
+        // Active jobs cannot be removed directly. The worker checks the
+        // cancelled Redis state and aborts on the next progress tick.
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      jobId,
+      status: "cancelled",
+      removedFromQueue,
+      wasActive,
+      message: wasActive
+        ? "تم إرسال طلب الإلغاء. سيتم إيقاف الرندر الجاري وحذف الملف المؤقت."
+        : "تم إلغاء التصدير وحذفه من قائمة الانتظار",
+    });
+  } catch (error: any) {
+    console.error("RENDER_DELETE_ERROR:", error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: error?.message || "Failed to cancel render job",
+        message: "حدث خطأ أثناء إلغاء التصدير",
+      },
+      { status: 500 },
+    );
+  }
+}
+
 function normalizeJobResponse(
   id: string,
   redisJob: any | null,
@@ -371,6 +455,7 @@ function getBullJobStatus(job: any | null): RenderJobStatus {
 function normalizeStatus(status: string | undefined): RenderJobStatus {
   if (
     status === "queued" ||
+    status === "cancelled" ||
     status === "validating" ||
     status === "bundling" ||
     status === "rendering" ||
@@ -385,6 +470,7 @@ function normalizeStatus(status: string | undefined): RenderJobStatus {
 
 function getDefaultStatusMessage(status: RenderJobStatus) {
   if (status === "completed") return "تم التصدير بنجاح";
+  if (status === "cancelled") return "تم إلغاء التصدير";
   if (status === "failed") return "فشل التصدير";
   if (status === "validating") return "جاري فحص الملفات";
   if (status === "bundling") return "جاري تجهيز Remotion";

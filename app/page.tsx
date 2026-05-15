@@ -123,7 +123,6 @@ type ExportPresetId =
 type ExportQualityId = "draft" | "standard" | "high" | "ultra";
 
 type HookStyle = "reflection" | "question" | "warning" | "emotional";
-type CaptionDisplayMode = "paged" | "line" | "scroll";
 
 const EXPORT_QUALITIES: Array<{
   id: ExportQualityId;
@@ -319,6 +318,8 @@ export default function Home() {
   const [selectedAyahs, setSelectedAyahs] = useState<ReelAyah[]>([]);
   const [preparingPreview, setPreparingPreview] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [currentExportJobId, setCurrentExportJobId] = useState("");
+  const [cancellingExportJobId, setCancellingExportJobId] = useState("");
 
   const [textColor, setTextColor] = useState("#ffffff");
   const [textSize, setTextSize] = useState("88");
@@ -343,8 +344,6 @@ export default function Home() {
   const [textPosition, setTextPosition] = useState("center");
   const [animationStyle, setAnimationStyle] = useState("slide");
   const [wordSpeed, setWordSpeed] = useState("normal");
-  const [captionDisplayMode, setCaptionDisplayMode] =
-    useState<CaptionDisplayMode>("paged");
 
   const [showTafsir, setShowTafsir] = useState(true);
   const [tafsirText, setTafsirText] = useState("تفسير مختصر يظهر هنا أسفل الآية، ويمكن لاحقًا جلبه تلقائيًا لكل آية.");
@@ -566,7 +565,6 @@ export default function Home() {
     textPosition,
     animationStyle,
     wordSpeed,
-    captionDisplayMode,
     showWordHighlight,
     showTafsir,
     tafsirText,
@@ -636,7 +634,6 @@ export default function Home() {
       textPosition,
       animationStyle,
       wordSpeed,
-      captionDisplayMode,
       showWordHighlight,
       showTafsir,
       tafsirText,
@@ -1679,12 +1676,66 @@ export default function Home() {
         return;
       }
 
-      if (status === "failed") {
+      if (status === "cancelled") {
+        setDownloadUrl("");
+        setRealRenderProgress(0);
+        setExportStatus("تم إلغاء التصدير");
+        setExportLogs((logs) => [...logs, "تم إلغاء التصدير وحذف المهمة"]);
+        await loadRecentExports();
+        return;
+      }
+
+      if (status === "cancelled") return { label: "ملغي", className: "bg-red-400/10 text-red-300" };
+  if (status === "failed") {
         throw new Error(job.error || message || "فشل التصدير");
       }
     }
 
     throw new Error("انتهت مهلة متابعة التصدير. راجع logs السيرفر.");
+  }
+
+  async function cancelRenderJob(jobId: string, options?: { current?: boolean }) {
+    const id = String(jobId || "").trim();
+    if (!id || cancellingExportJobId) return;
+
+    try {
+      setCancellingExportJobId(id);
+      const response = await fetch(`/api/render?jobId=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        cache: "no-store",
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        alert(data.message || "فشل إلغاء التصدير");
+        return;
+      }
+
+      setRecentExports((jobs) =>
+        jobs.filter((job) => String(job.jobId || job.id || "") !== id),
+      );
+
+      if (options?.current || currentExportJobId === id) {
+        exportLogTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+        exportLogTimersRef.current = [];
+        setExporting(false);
+        setCurrentExportJobId("");
+        setDownloadUrl("");
+        setRealRenderProgress(0);
+        setExportEstimatedRemainingSeconds(0);
+        setExportStartedAt(null);
+        setExportStatus("تم إلغاء التصدير");
+        setExportLogs((logs) => [...logs, data.message || "تم إلغاء التصدير"]);
+      }
+
+      await loadRecentExports();
+    } catch (error) {
+      console.log(error);
+      alert("حدث خطأ أثناء إلغاء التصدير");
+    } finally {
+      setCancellingExportJobId("");
+    }
   }
 
   async function exportVideo() {
@@ -1786,7 +1837,6 @@ export default function Home() {
           textPosition,
           animationStyle,
           wordSpeed,
-          captionDisplayMode,
           showWordHighlight,
           showTafsir,
           tafsirText,
@@ -1851,6 +1901,7 @@ export default function Home() {
         return;
       }
 
+      setCurrentExportJobId(String(data.jobId || ""));
       setExportStatus(data.message || "تمت إضافة الفيديو لقائمة الانتظار");
       setExportLogs((logs) => [
         ...logs,
@@ -1874,6 +1925,7 @@ export default function Home() {
       exportLogTimersRef.current.forEach((timer) => window.clearTimeout(timer));
       exportLogTimersRef.current = [];
       setExporting(false);
+      setCurrentExportJobId("");
       setExportStartedAt(null);
       setExportEstimatedRemainingSeconds(0);
     }
@@ -2521,7 +2573,7 @@ export default function Home() {
                         ثم اضغط تحديث المعرض.
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         {imageBackgroundCards.map((item) => (
                           <button
                             key={item.id}
@@ -2533,7 +2585,7 @@ export default function Home() {
                                 : "border-white/10 hover:border-emerald-400/35"
                             }`}
                           >
-                            <div className="relative h-40 overflow-hidden bg-black">
+                            <div className="relative h-56 overflow-hidden bg-black sm:h-52">
                               <img
                                 src={item.image}
                                 alt={item.title}
@@ -2543,18 +2595,11 @@ export default function Home() {
                                 }}
                               />
 
-                              <div className="absolute inset-0 bg-gradient-to-t from-black via-black/35 to-transparent" />
-
                               {backgroundType === "image" && backgroundStyle === item.id && (
                                 <div className="absolute left-3 top-3 rounded-full bg-emerald-400 px-3 py-1 text-xs font-black text-black">
                                   نشط
                                 </div>
                               )}
-
-                              <div className="absolute inset-x-0 bottom-0 p-4">
-                                <p className="text-lg font-black text-white">{item.title}</p>
-                                <p className="mt-1 text-xs leading-5 text-neutral-300">{item.description}</p>
-                              </div>
                             </div>
                           </button>
                         ))}
@@ -3378,18 +3423,6 @@ export default function Home() {
                           onChange={setShowWordHighlight}
                         />
 
-                        <SelectBox
-                          label="طريقة عرض الآيات"
-                          value={captionDisplayMode}
-                          onChange={(value) =>
-                            setCaptionDisplayMode(value as CaptionDisplayMode)
-                          }
-                        >
-                          <option value="paged">صفحتين / سطرين</option>
-                          <option value="line">سطر واحد فقط</option>
-                          <option value="scroll">تصعد لأعلى وتختفي</option>
-                        </SelectBox>
-
                         <div className="grid grid-cols-2 gap-3">
                           <SelectBox
                             label="شكل الهايلايت"
@@ -3674,6 +3707,16 @@ export default function Home() {
                         <p className="mt-2 text-center text-sm font-bold text-emerald-300">
                           {realRenderProgress}% مكتمل
                         </p>
+                        {currentExportJobId && (
+                          <button
+                            type="button"
+                            onClick={() => cancelRenderJob(currentExportJobId, { current: true })}
+                            disabled={Boolean(cancellingExportJobId)}
+                            className="mt-3 w-full rounded-2xl border border-red-400/40 bg-red-500/15 px-4 py-3 text-sm font-black text-red-200 transition hover:bg-red-500/25 disabled:opacity-50"
+                          >
+                            {cancellingExportJobId === currentExportJobId ? "جاري الإلغاء..." : "إلغاء التصدير وحذف المهمة"}
+                          </button>
+                        )}
                         <div className="mt-4 rounded-2xl border border-white/10 bg-black/25 p-3 text-xs text-neutral-200">
                           <p className="mb-2 font-bold text-emerald-300">
                             سجل التصدير
@@ -3752,7 +3795,7 @@ export default function Home() {
                               job.id ||
                               `${job.fileName || "export"}-${index}`;
 
-                            return <ExportJobCard key={key} job={job} />;
+                            return <ExportJobCard key={key} job={job} onCancel={cancelRenderJob} cancellingJobId={cancellingExportJobId} />;
                           })}
                         </div>
                       )}
@@ -4171,10 +4214,20 @@ function normalizeExportJob(job: any): ExportJob {
   };
 }
 
-function ExportJobCard({ job }: { job: ExportJob }) {
+function ExportJobCard({
+  job,
+  onCancel,
+  cancellingJobId,
+}: {
+  job: ExportJob;
+  onCancel: (jobId: string) => void;
+  cancellingJobId: string;
+}) {
   const status = getExportStatusLabel(job.status || "queued");
   const jobIdentifier = String(job.jobId || job.id || job.fileName || "export");
   const title = job.fileName || `تصدير ${jobIdentifier.slice(0, 8)}`;
+  const progress = clampNumber(Number(job.progress || 0), 0, 100);
+  const canCancel = ["queued", "validating", "bundling", "rendering"].includes(String(job.status || ""));
   const meta = job.metadata || {
     reciter: job.reciter,
     surahName: job.surahName,
@@ -4210,15 +4263,30 @@ function ExportJobCard({ job }: { job: ExportJob }) {
         <div
           className="h-full rounded-full bg-emerald-400 transition-all duration-300"
           style={{
-            width: `${Math.max(job.progress || 0, job.status === "completed" ? 100 : 6)}%`,
+            width: `${Math.max(progress, job.status === "completed" ? 100 : 6)}%`,
           }}
         />
       </div>
 
+      {canCancel && (
+        <p className="mb-3 text-center text-xs font-black text-emerald-300">
+          جاري التصدير: {Math.round(progress)}%
+        </p>
+      )}
+
       <div className="flex items-center justify-between gap-3 text-xs text-neutral-400">
         <span>{formatExportDate(job.createdAt)}</span>
 
-        {job.url ? (
+        {canCancel ? (
+          <button
+            type="button"
+            onClick={() => onCancel(jobIdentifier)}
+            disabled={cancellingJobId === jobIdentifier}
+            className="rounded-xl border border-red-400/40 bg-red-500/15 px-3 py-2 font-black text-red-200 transition hover:bg-red-500/25 disabled:opacity-50"
+          >
+            {cancellingJobId === jobIdentifier ? "إلغاء..." : "إلغاء"}
+          </button>
+        ) : job.url ? (
           <a
             href={job.url}
             download={job.fileName || "quran-reel.mp4"}
@@ -4545,6 +4613,7 @@ function getExportStatusLabel(status: string) {
     };
   }
 
+  if (status === "cancelled") return { label: "ملغي", className: "bg-red-400/10 text-red-300" };
   if (status === "failed") {
     return {
       label: "فشل",
@@ -5128,6 +5197,7 @@ function getRenderStatusMessage(status: string) {
   if (status === "bundling") return "جاري تجهيز Remotion";
   if (status === "rendering") return "جاري تصدير الفيديو";
   if (status === "completed") return "تم التصدير بنجاح";
+  if (status === "cancelled") return { label: "ملغي", className: "bg-red-400/10 text-red-300" };
   if (status === "failed") return "فشل التصدير";
   return "جاري معالجة الفيديو";
 }

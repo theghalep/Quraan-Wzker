@@ -6,7 +6,8 @@ export type RenderJobStatus =
   | "bundling"
   | "rendering"
   | "completed"
-  | "failed";
+  | "failed"
+  | "cancelled";
 
 export type RenderJobRecord = {
   id: string;
@@ -19,6 +20,7 @@ export type RenderJobRecord = {
   createdAt?: string;
   updatedAt?: string;
   completedAt?: string;
+  cancelledAt?: string;
   durationInSeconds?: number;
   durationInFrames?: number;
   exportPreset?: string;
@@ -41,6 +43,7 @@ function getJobKey(jobId: string) {
 function getJobTtl(status?: RenderJobStatus) {
   if (status === "completed") return COMPLETED_JOB_TTL_SECONDS;
   if (status === "failed") return FAILED_JOB_TTL_SECONDS;
+  if (status === "cancelled") return FAILED_JOB_TTL_SECONDS;
   return JOB_TTL_SECONDS;
 }
 
@@ -120,4 +123,21 @@ export async function deleteRenderJob(jobId: string) {
     .del(getJobKey(jobId))
     .zrem(RENDER_JOBS_INDEX_KEY, jobId)
     .exec();
+}
+
+
+export async function cancelRenderJob(jobId: string, message = "تم إلغاء التصدير") {
+  return updateRenderJob(jobId, {
+    status: "cancelled",
+    progress: 0,
+    message,
+    error: message,
+    cancelledAt: new Date().toISOString(),
+    completedAt: new Date().toISOString(),
+  });
+}
+
+export async function isRenderJobCancelled(jobId: string) {
+  const job = await getRenderJob(jobId);
+  return job?.status === "cancelled";
 }

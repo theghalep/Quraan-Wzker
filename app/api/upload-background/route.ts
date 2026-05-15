@@ -57,13 +57,13 @@ export async function POST(request: Request) {
 
     await writeFile(filePath, buffer);
 
-    const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL ||
-      request.headers.get("origin") ||
-      "http://localhost:3000";
+    // Return a root-relative URL for browser preview.
+    // The render worker will convert it to the current public site URL, which
+    // avoids production bugs where NEXT_PUBLIC_SITE_URL still points to localhost.
+    const url = `/uploads/${safeName}`;
 
     return NextResponse.json({
-      url: `${siteUrl}/uploads/${safeName}`,
+      url,
       type: file.type.startsWith("image/") ? "image" : "video",
       name: file.name,
       size: file.size,

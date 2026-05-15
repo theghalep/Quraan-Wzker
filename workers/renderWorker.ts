@@ -2,7 +2,7 @@ import path from "path";
 import { mkdir, readdir, stat, unlink } from "fs/promises";
 import { Worker } from "bullmq";
 import { redis } from "../lib/queue/redis";
-import { updateRenderJob } from "../lib/queue/renderJobStore";
+import { getRenderJob, updateRenderJob } from "../lib/queue/renderJobStore";
 
 type ExportSettings = {
   preset: string;
@@ -19,6 +19,7 @@ type ExportSettings = {
 
 let cachedBundle: string | null = null;
 let cachedBundleAt = 0;
+let cachedBundleSignature = "";
 let cachedRuntimePromise: Promise<{
   bundle: any;
   renderMedia: any;
@@ -42,6 +43,7 @@ const DEFAULT_BISMILLAH_DURATION_SECONDS = 3.2;
 const DEFAULT_HOOK_DURATION_SECONDS = 2.5;
 const DEFAULT_HOOK_TEXT = "توقّف لحظة… هذه الآية لك";
 const BISMILLAH_TEXT = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ";
+const RENDER_CANCELLED_CODE = "RENDER_CANCELLED";
 
 // In local development, Remotion bundle caching hides changes made to
 // remotion/Video.tsx. Keep production fast, but always rebuild locally.
@@ -68,6 +70,11 @@ new Worker(
       console.log("Render completed:", jobId);
       return result;
     } catch (error: any) {
+      if (isRenderCancelledError(error)) {
+        console.log("Render cancelled:", jobId);
+        return { jobId, status: "cancelled", progress: 0 };
+      }
+
       console.error("RENDER_WORKER_ERROR:", error);
 
       await updateRenderJob(jobId, {
@@ -145,6 +152,7 @@ async function renderQuranVideo({
     progress: 5,
     message: "جاري فحص الخلفية وملفات الصوت",
   });
+  await assertRenderNotCancelled(jobId);
 
   if (!ayahs.length) {
     throw new Error("لا توجد آيات للتصدير");
@@ -232,7 +240,6 @@ async function renderQuranVideo({
     textPosition: body.textPosition || "center",
     animationStyle: body.animationStyle || "slide",
     wordSpeed: body.wordSpeed || "normal",
-    captionDisplayMode: body.captionDisplayMode || "paged",
 
     showWordHighlight: body.showWordHighlight ?? true,
     wordHighlightColor: body.wordHighlightColor || "#34d399",
@@ -327,11 +334,13 @@ async function renderQuranVideo({
   );
 
   const entry = path.join(process.cwd(), "remotion", "Root.tsx");
+  const bundleSignature = await getRemotionBundleSignature(entry);
 
   const shouldUseBundleCache = !DISABLE_BUNDLE_CACHE;
   const shouldRebuildBundle =
     !shouldUseBundleCache ||
     !cachedBundle ||
+    cachedBundleSignature !== bundleSignature ||
     Date.now() - cachedBundleAt > BUNDLE_CACHE_TTL;
 
   let bundled = shouldUseBundleCache ? cachedBundle : null;
@@ -353,9 +362,11 @@ async function renderQuranVideo({
     if (shouldUseBundleCache) {
       cachedBundle = bundled;
       cachedBundleAt = Date.now();
+      cachedBundleSignature = bundleSignature;
     } else {
       cachedBundle = null;
       cachedBundleAt = 0;
+      cachedBundleSignature = "";
     }
   } else {
     await updateRenderJob(jobId, {
@@ -412,6 +423,8 @@ async function renderQuranVideo({
 
   await cleanupOldExports(exportsDir);
 
+  await assertRenderNotCancelled(jobId);
+
   await updateRenderJob(jobId, {
     status: "rendering",
     progress: 25,
@@ -430,7 +443,8 @@ async function renderQuranVideo({
   let lastProgressUpdateAt = 0;
   let lastReportedProgress = 24;
 
-  await renderMedia({
+  try {
+    await renderMedia({
     composition: finalComposition,
     serveUrl: bundled,
 
@@ -462,6 +476,8 @@ async function renderQuranVideo({
     timeoutInMilliseconds: RENDER_TIMEOUT_MS,
 
     onProgress: async ({ progress }: { progress: number }) => {
+      await assertRenderNotCancelled(jobId, outputLocation);
+
       const renderProgress = Math.round(progress * 100);
       const totalProgress = Math.min(
         99,
@@ -499,6 +515,23 @@ async function renderQuranVideo({
       );
     },
   });
+  } catch (error: any) {
+    if (isRenderCancelledError(error) || (await isCurrentRenderCancelled(jobId))) {
+      await unlink(outputLocation).catch(() => undefined);
+      await updateRenderJob(jobId, {
+        status: "cancelled" as any,
+        progress: 0,
+        message: "تم إلغاء التصدير وحذف الملف المؤقت",
+        error: "تم إلغاء التصدير",
+        completedAt: new Date().toISOString(),
+      });
+      throw createRenderCancelledError();
+    }
+
+    throw error;
+  }
+
+  await assertRenderNotCancelled(jobId, outputLocation);
 
   const encodedFileName = encodeURIComponent(fileName);
   const url = `${publicSiteUrl}/exports/${encodedFileName}`;
@@ -533,6 +566,49 @@ async function renderQuranVideo({
     exportHeight: exportSettings.height,
     exportFps: exportSettings.fps,
   };
+}
+
+
+function createRenderCancelledError() {
+  const error = new Error("تم إلغاء التصدير");
+  (error as any).code = RENDER_CANCELLED_CODE;
+  return error;
+}
+
+function isRenderCancelledError(error: any) {
+  return error?.code === RENDER_CANCELLED_CODE;
+}
+
+async function isCurrentRenderCancelled(jobId: string) {
+  const current = await getRenderJob(jobId);
+  return current?.status === "cancelled";
+}
+
+async function assertRenderNotCancelled(jobId: string, outputLocation?: string) {
+  if (!(await isCurrentRenderCancelled(jobId))) return;
+
+  if (outputLocation) {
+    await unlink(outputLocation).catch(() => undefined);
+  }
+
+  throw createRenderCancelledError();
+}
+
+async function getRemotionBundleSignature(entry: string) {
+  const candidates = [
+    entry,
+    path.join(process.cwd(), "remotion", "Video.tsx"),
+    path.join(process.cwd(), "package.json"),
+  ];
+
+  const parts = await Promise.all(
+    candidates.map(async (filePath) => {
+      const fileStat = await stat(filePath).catch(() => null);
+      return `${filePath}:${fileStat?.mtimeMs || 0}:${fileStat?.size || 0}`;
+    }),
+  );
+
+  return parts.join("|");
 }
 
 async function loadRemotionRuntime() {

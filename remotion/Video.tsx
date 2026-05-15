@@ -152,6 +152,12 @@ const FALLBACK_AYAH: Ayah = {
 const BACKGROUND_LOOP_SECONDS = 7;
 const BACKGROUND_LOOP_CROSSFADE_SECONDS = 1.65;
 
+// The Quran audio usually starts the spoken word a little before the visual
+// word highlight reaches it, especially after browser/audio buffering.
+// Advancing the caption clock slightly makes preview and export feel synced
+// without changing the real audio timeline.
+const DEFAULT_SUBTITLE_SYNC_ADVANCE_SECONDS = 0.18;
+
 const QURAN_FONT_FACE_CSS = `
 @font-face {
   font-family: "Amiri Quran";
@@ -1758,7 +1764,7 @@ function getOpticalCaptionLayout({
   return {
     fontSize,
     maxWidth: isLandscape ? "94%" : isSquare ? "95%" : "96%",
-    lineHeight: isLandscape ? 1.54 : isSquare ? 1.62 : 1.72,
+    lineHeight: isLandscape ? 1.62 : isSquare ? 1.74 : 1.92,
     sidePadding: Math.round(safeWidth * (isLandscape ? 0.035 : 0.026)) + 14,
     paddingX: 0,
     paddingY: 0,
@@ -1971,7 +1977,7 @@ function AnimatedText({
 
   const activeWordIndex = getActiveWordIndexFast({
     currentTime,
-    offset: highlightOffset,
+    offset: Number(highlightOffset || 0) + DEFAULT_SUBTITLE_SYNC_ADVANCE_SECONDS,
     duration,
     speed: highlightSpeed,
     wordCount: words.length,
@@ -1998,7 +2004,7 @@ function AnimatedText({
     color,
     fontSize: safeSize,
     fontWeight: 900,
-    lineHeight: isLandscapeCaption ? 1.58 : isSquareCaption ? 1.7 : 1.9,
+    lineHeight: isLandscapeCaption ? 1.66 : isSquareCaption ? 1.82 : 2.08,
     textShadow: isRemotionRender
       ? "0 3px 9px rgba(0,0,0,0.98), 0 0 5px rgba(255,255,255,0.16)"
       : "0 4px 13px rgba(0,0,0,0.98), 0 0 11px rgba(255,255,255,0.18)",
@@ -2064,7 +2070,7 @@ function AnimatedText({
               overflow: "visible",
               paddingInline: 0,
               boxSizing: "border-box",
-              marginBlock: "0.36em",
+              marginBlock: "0.46em",
             }}
           >
             {line.map((item, visibleIndex) => (
@@ -2166,7 +2172,7 @@ function AnimatedText({
             overflow: "visible",
             paddingInline: 0,
             boxSizing: "border-box",
-            marginBlock: "0.36em",
+            marginBlock: "0.46em",
           }}
         >
           {line.map((item, visibleIndex) => {
