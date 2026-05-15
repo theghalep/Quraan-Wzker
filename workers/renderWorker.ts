@@ -259,6 +259,7 @@ async function renderQuranVideo({
     backgroundType: body.backgroundType || "video",
 
     isRemotionRender: true,
+    assetBaseUrl: publicSiteUrl,
 
     textPosition: body.textPosition || "center",
     animationStyle: body.animationStyle || "slide",

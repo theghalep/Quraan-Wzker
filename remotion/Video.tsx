@@ -51,6 +51,7 @@ type Props = {
   totalVideoDuration?: number;
   backgroundType?: "video" | "image";
   isRemotionRender?: boolean;
+  assetBaseUrl?: string;
 
   showHook?: boolean;
   hookText?: string;
@@ -158,10 +159,14 @@ const BACKGROUND_LOOP_CROSSFADE_SECONDS = 1.65;
 // without changing the real audio timeline.
 const DEFAULT_SUBTITLE_SYNC_ADVANCE_SECONDS = 0.18;
 
-const QURAN_FONT_FACE_CSS = `
+function getQuranFontFaceCss(assetBaseUrl = "") {
+  const baseUrl = String(assetBaseUrl || "").replace(/\/$/, "");
+  const fontUrl = (fileName: string) => `${baseUrl}/fonts/${fileName}`;
+
+  return `
 @font-face {
   font-family: "Amiri Quran";
-  src: url("/fonts/AmiriQuran-Regular.ttf") format("truetype");
+  src: url("${fontUrl("AmiriQuran-Regular.ttf")}") format("truetype");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -169,7 +174,7 @@ const QURAN_FONT_FACE_CSS = `
 
 @font-face {
   font-family: "Amiri";
-  src: url("/fonts/Amiri-Regular.ttf") format("truetype");
+  src: url("${fontUrl("Amiri-Regular.ttf")}") format("truetype");
   font-weight: 400 900;
   font-style: normal;
   font-display: swap;
@@ -177,7 +182,7 @@ const QURAN_FONT_FACE_CSS = `
 
 @font-face {
   font-family: "Noto Naskh Arabic";
-  src: url("/fonts/NotoNaskhArabic-Regular.ttf") format("truetype");
+  src: url("${fontUrl("NotoNaskhArabic-Regular.ttf")}") format("truetype");
   font-weight: 400 900;
   font-style: normal;
   font-display: swap;
@@ -185,7 +190,7 @@ const QURAN_FONT_FACE_CSS = `
 
 @font-face {
   font-family: "Cairo";
-  src: url("/fonts/Cairo-Regular.ttf") format("truetype");
+  src: url("${fontUrl("Cairo-Regular.ttf")}") format("truetype");
   font-weight: 400 900;
   font-style: normal;
   font-display: swap;
@@ -193,12 +198,14 @@ const QURAN_FONT_FACE_CSS = `
 
 @font-face {
   font-family: "IBM Plex Sans Arabic";
-  src: url("/fonts/IBMPlexSansArabic-Regular.ttf") format("truetype");
+  src: url("${fontUrl("IBMPlexSansArabic-Regular.ttf")}") format("truetype");
   font-weight: 400 900;
   font-style: normal;
   font-display: swap;
 }
 `;
+}
+
 
 const LABEL_FONT_STACK = `"Cairo", "IBM Plex Sans Arabic", "Noto Naskh Arabic", Arial, sans-serif`;
 const QURAN_FONT_STACK = `"Amiri Quran", "Amiri", "Noto Naskh Arabic", serif`;
@@ -476,6 +483,7 @@ function useNormalizedProps({
   backgroundVideoDuration = 0,
   totalVideoDuration = 0,
   backgroundType = "video",
+  assetBaseUrl = "",
 
   showHook = true,
   hookText = "توقّف لحظة… هذه الآية لك",
@@ -604,6 +612,7 @@ function useNormalizedProps({
     backgroundVideoDuration,
     totalVideoDuration,
     backgroundType,
+    assetBaseUrl,
     showHook,
     hookText,
     hookDuration,
@@ -735,6 +744,7 @@ function VideoCanvas({
   backgroundVideoDuration = 0,
   totalVideoDuration = 0,
   backgroundType,
+  assetBaseUrl,
   exportPreset,
   exportQuality,
   exportWidth,
@@ -907,7 +917,7 @@ function VideoCanvas({
 
   return (
     <>
-      <style suppressHydrationWarning>{`${QURAN_FONT_FACE_CSS}${animationStyleTag}`}</style>
+      <style suppressHydrationWarning>{`${getQuranFontFaceCss(assetBaseUrl)}${animationStyleTag}`}</style>
 
       <div
         ref={previewCanvasRef}
