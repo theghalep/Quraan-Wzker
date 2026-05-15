@@ -245,7 +245,55 @@ const SYNC_WAVE_BARS = Array.from({ length: 48 }, (_, index) => ({
   height: 16 + ((index * 19) % 46),
 }));
 
-const BACKGROUND_CARDS = [
+type BackgroundCard = {
+  id: string;
+  title: string;
+  description: string;
+  image: string;
+};
+
+const IMAGE_BACKGROUND_CARDS: BackgroundCard[] = [
+  {
+    id: "image-mosque-night",
+    title: "مسجد ليلي",
+    description: "صورة ثابتة هادئة كأساس للريل",
+    image: "/backgrounds/mosque-night.jpg",
+  },
+  {
+    id: "image-kaaba",
+    title: "الكعبة",
+    description: "خلفية روحانية ثابتة",
+    image: "/backgrounds/kaaba.jpg",
+  },
+  {
+    id: "image-quran",
+    title: "مصحف",
+    description: "صورة مصحف بإضاءة ناعمة",
+    image: "/backgrounds/quran.jpg",
+  },
+  {
+    id: "image-clouds",
+    title: "سماء هادئة",
+    description: "سحاب وإضاءة مريحة",
+    image: "/backgrounds/clouds.jpg",
+  },
+  {
+    id: "image-nature",
+    title: "طبيعة",
+    description: "خلفية طبيعية ثابتة ومريحة",
+    image: "/backgrounds/nature.jpg",
+  },
+  {
+    id: "image-abstract",
+    title: "تدرج سينمائي",
+    description: "خلفية داكنة مناسبة للنص",
+    image: "/backgrounds/abstract-dark.jpg",
+  },
+];
+
+const DEFAULT_IMAGE_BACKGROUND = IMAGE_BACKGROUND_CARDS[0];
+
+const VIDEO_BACKGROUND_CARDS: BackgroundCard[] = [
   {
     id: "rain",
     title: "مطر",
@@ -305,11 +353,11 @@ export default function Home() {
   const [textSize, setTextSize] = useState("62");
   const [fontFamily, setFontFamily] = useState("Amiri Quran");
 
-  const [backgroundStyle, setBackgroundStyle] = useState("emerald");
-  const [backgroundVideoUrl, setBackgroundVideoUrl] = useState("");
+  const [backgroundStyle, setBackgroundStyle] = useState(DEFAULT_IMAGE_BACKGROUND.id);
+  const [backgroundVideoUrl, setBackgroundVideoUrl] = useState(DEFAULT_IMAGE_BACKGROUND.image);
   const [backgroundVideoDuration, setBackgroundVideoDuration] = useState(0);
   const [backgroundType, setBackgroundType] = useState<"video" | "image">(
-    "video",
+    "image",
   );
   const [customBackgroundName, setCustomBackgroundName] = useState("");
   const [customBackgroundSize, setCustomBackgroundSize] = useState<
@@ -318,6 +366,8 @@ export default function Home() {
   const [customBackgroundMimeType, setCustomBackgroundMimeType] = useState("");
   const [uploadingBackground, setUploadingBackground] = useState(false);
   const [loadingBackground, setLoadingBackground] = useState(false);
+  const [localBackgroundGallery, setLocalBackgroundGallery] = useState<BackgroundCard[]>([]);
+  const [loadingLocalBackgroundGallery, setLoadingLocalBackgroundGallery] = useState(false);
 
   const [textPosition, setTextPosition] = useState("center");
   const [animationStyle, setAnimationStyle] = useState("slide");
@@ -374,25 +424,25 @@ export default function Home() {
 
   const [showSurahName, setShowSurahName] = useState(true);
   const [surahNameColor, setSurahNameColor] = useState("#ffffff");
-  const [surahNameSize, setSurahNameSize] = useState("45");
+  const [surahNameSize, setSurahNameSize] = useState("38");
   const [surahNamePosition, setSurahNamePosition] = useState("top");
-  const [surahNameX, setSurahNameX] = useState("35");
+  const [surahNameX, setSurahNameX] = useState("15");
   const [surahNameY, setSurahNameY] = useState("90");
 
   const [showReciterName, setShowReciterName] = useState(true);
   const [reciterNameColor, setReciterNameColor] = useState("#34d399");
-  const [reciterNameSize, setReciterNameSize] = useState("34");
+  const [reciterNameSize, setReciterNameSize] = useState("28");
   const [reciterNamePosition, setReciterNamePosition] = useState("bottom");
-  const [reciterNameX, setReciterNameX] = useState("69");
+  const [reciterNameX, setReciterNameX] = useState("85");
   const [reciterNameY, setReciterNameY] = useState("90");
 
   const [showBrandName, setShowBrandName] = useState(true);
   const [brandName, setBrandName] = useState("وذكر | wzkerq");
   const [brandNameColor, setBrandNameColor] = useState("#ffffff");
-  const [brandNameSize, setBrandNameSize] = useState("35");
+  const [brandNameSize, setBrandNameSize] = useState("28");
   const [brandNamePosition, setBrandNamePosition] = useState("bottom");
   const [brandNameX, setBrandNameX] = useState("50");
-  const [brandNameY, setBrandNameY] = useState("15");
+  const [brandNameY, setBrandNameY] = useState("10");
   const [brandNameStyle, setBrandNameStyle] = useState("glass");
   const [showProgressBar, setShowProgressBar] = useState(true);
   const [showCountdownTimer, setShowCountdownTimer] = useState(true);
@@ -672,6 +722,10 @@ export default function Home() {
     loadRecentExports();
   }, []);
 
+  useEffect(() => {
+    loadLocalBackgroundGallery();
+  }, []);
+
 
 
   useEffect(() => {
@@ -711,6 +765,39 @@ export default function Home() {
       console.log(error);
     } finally {
       setLoadingRecentExports(false);
+    }
+  }
+
+  async function loadLocalBackgroundGallery() {
+    try {
+      setLoadingLocalBackgroundGallery(true);
+
+      const response = await fetch(`/api/background-gallery?t=${Date.now()}`, {
+        cache: "no-store",
+      });
+
+      if (!response.ok) return;
+
+      const data = await response.json().catch(() => ({}));
+      const backgrounds = Array.isArray(data.backgrounds)
+        ? data.backgrounds
+            .filter((item: any) => item?.image)
+            .map((item: any) => ({
+              id: String(item.id || `local-${item.image}`),
+              title: String(item.title || "خلفية محلية"),
+              description: String(
+                item.description || "صورة من public/backgrounds/gallery",
+              ),
+              image: String(item.image),
+            }))
+        : [];
+
+      setLocalBackgroundGallery(backgrounds);
+    } catch (error) {
+      console.log("LOCAL_BACKGROUND_GALLERY_ERROR:", error);
+      setLocalBackgroundGallery([]);
+    } finally {
+      setLoadingLocalBackgroundGallery(false);
     }
   }
 
@@ -1075,6 +1162,19 @@ export default function Home() {
     });
   }
 
+  function selectImageBackground(item: BackgroundCard) {
+    setBackgroundStyle(item.id);
+    setBackgroundVideoUrl(item.image);
+    setBackgroundVideoDuration(0);
+    setBackgroundType("image");
+    setCustomBackgroundName("");
+    setCustomBackgroundSize(null);
+    setCustomBackgroundMimeType("");
+    setDownloadUrl("");
+    setPreviewSeekSeconds(0);
+    setPreviewPlaying(true);
+  }
+
   async function fetchBackgroundVideo(style: string) {
     try {
       setLoadingBackground(true);
@@ -1113,7 +1213,7 @@ export default function Home() {
   }
 
   useEffect(() => {
-    if (!backgroundVideoUrl) {
+    if (!backgroundVideoUrl || backgroundType === "image") {
       setBackgroundVideoDuration(0);
       return;
     }
@@ -1142,7 +1242,7 @@ export default function Home() {
       video.removeAttribute("src");
       video.load();
     };
-  }, [backgroundVideoUrl]);
+  }, [backgroundVideoUrl, backgroundType]);
 
   async function loadTafsirDirect(chapterNumber: string | number, ayahNumber: string | number) {
     try {
@@ -1417,12 +1517,14 @@ export default function Home() {
       setAyahs(loadedAyahs);
       setFromAyah(nextFromAyah);
       setToAyah(nextToAyah);
-      setBackgroundStyle(nextBackgroundStyle);
+      const suggestedImageBackground =
+        IMAGE_BACKGROUND_CARDS.find((item) => item.id.includes(nextBackgroundStyle)) ||
+        DEFAULT_IMAGE_BACKGROUND;
+
+      selectImageBackground(suggestedImageBackground);
       setActiveTab("quran");
       setPreviewSeekSeconds(0);
       setPreviewPlaying(true);
-
-      await fetchBackgroundVideo(nextBackgroundStyle);
 
       const ayahsWithDurations = await Promise.all(
         selected.map(async (ayah) => {
@@ -1478,8 +1580,13 @@ export default function Home() {
         return;
       }
 
-      if (!backgroundVideoUrl || options?.backgroundStyleOverride) {
-        await fetchBackgroundVideo(nextBackgroundStyle);
+      if (!backgroundVideoUrl) {
+        selectImageBackground(DEFAULT_IMAGE_BACKGROUND);
+      } else if (options?.backgroundStyleOverride) {
+        const suggestedImageBackground =
+          IMAGE_BACKGROUND_CARDS.find((item) => item.id.includes(nextBackgroundStyle)) ||
+          DEFAULT_IMAGE_BACKGROUND;
+        selectImageBackground(suggestedImageBackground);
       }
 
       const ayahsWithDurations = await Promise.all(
@@ -1796,7 +1903,18 @@ export default function Home() {
     }
   }
 
-  const backgroundCards = BACKGROUND_CARDS;
+  const imageBackgroundCards = useMemo(() => {
+    const seen = new Set<string>();
+
+    return [...IMAGE_BACKGROUND_CARDS, ...localBackgroundGallery].filter((item) => {
+      const key = item.image || item.id;
+
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [localBackgroundGallery]);
+  const videoBackgroundCards = VIDEO_BACKGROUND_CARDS;
 
   return (
     <main
@@ -2394,68 +2512,135 @@ export default function Home() {
 
                 {activeTab === "background" && (
                   <Panel
-                    title="معرض الخلفيات"
-                    description="اختار نوع الخلفية، أو جرب خلفية عشوائية جديدة."
+                    title="الخلفيات"
+                    description="الأساس الآن صور ثابتة جاهزة، والفيديو اختيار ثانوي عند الحاجة."
                   >
-                    <div className="grid grid-cols-2 gap-3">
-                      {backgroundCards.map((item) => (
+                    <div className="rounded-[24px] border border-emerald-400/20 bg-emerald-400/10 p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-black text-emerald-200">الصور الأساسية</p>
+                          <p className="mt-1 text-xs leading-6 text-neutral-300">
+                            اختار صورة من الصور الموجودة داخل public/backgrounds أو ضيف صورك في public/backgrounds/gallery.
+                          </p>
+                        </div>
                         <button
-                          key={item.id}
                           type="button"
-                          onClick={async () => {
-                            setBackgroundStyle(item.id);
-                            await fetchBackgroundVideo(item.id);
-                          }}
-                          className={`group relative overflow-hidden rounded-[28px] border text-right transition duration-300 hover:-translate-y-1 ${
-                            backgroundStyle === item.id
-                              ? "border-emerald-400/70 shadow-[0_0_45px_rgba(52,211,153,0.24)]"
-                              : "border-white/10 hover:border-emerald-400/35"
-                          }`}
+                          onClick={loadLocalBackgroundGallery}
+                          disabled={loadingLocalBackgroundGallery}
+                          className="rounded-full bg-emerald-400 px-3 py-1 text-[11px] font-black text-black disabled:opacity-60"
                         >
-                          <div className="relative h-40 overflow-hidden bg-black">
-                            <img
-                              src={item.image}
-                              alt={item.title}
-                              className="h-full w-full object-cover transition duration-700 group-hover:scale-110"
-                            />
-
-                            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/35 to-transparent" />
-                            <div className="absolute inset-0 bg-emerald-400/0 transition group-hover:bg-emerald-400/10" />
-
-                            {backgroundStyle === item.id && (
-                              <div className="absolute left-3 top-3 rounded-full bg-emerald-400 px-3 py-1 text-xs font-black text-black">
-                                نشط
-                              </div>
-                            )}
-
-                            <div className="absolute inset-x-0 bottom-0 p-4">
-                              <p className="text-lg font-black text-white">
-                                {item.title}
-                              </p>
-
-                              <p className="mt-1 text-xs leading-5 text-neutral-300">
-                                {item.description}
-                              </p>
-
-                              <p className="mt-2 text-[11px] font-bold text-emerald-300 opacity-0 transition group-hover:opacity-100">
-                                اضغط لجلب فيديو عشوائي
-                              </p>
-                            </div>
-                          </div>
+                          {loadingLocalBackgroundGallery ? "تحديث..." : "تحديث المعرض"}
                         </button>
-                      ))}
+                      </div>
+
+                      <div className="mb-3 rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-[11px] leading-5 text-neutral-300">
+                        لإضافة صور جديدة: ضع ملفات JPG/PNG/WebP داخل
+                        <span dir="ltr" className="mx-1 rounded bg-black/35 px-2 py-1 font-mono text-emerald-200">
+                          public/backgrounds/gallery
+                        </span>
+                        ثم اضغط تحديث المعرض.
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        {imageBackgroundCards.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => selectImageBackground(item)}
+                            className={`group relative overflow-hidden rounded-[28px] border text-right transition duration-300 hover:-translate-y-1 ${
+                              backgroundType === "image" && backgroundStyle === item.id
+                                ? "border-emerald-400/70 shadow-[0_0_45px_rgba(52,211,153,0.24)]"
+                                : "border-white/10 hover:border-emerald-400/35"
+                            }`}
+                          >
+                            <div className="relative h-40 overflow-hidden bg-black">
+                              <img
+                                src={item.image}
+                                alt={item.title}
+                                className="h-full w-full object-cover transition duration-700 group-hover:scale-110"
+                                onError={(event) => {
+                                  event.currentTarget.src = DEFAULT_IMAGE_BACKGROUND.image;
+                                }}
+                              />
+
+                              <div className="absolute inset-0 bg-gradient-to-t from-black via-black/35 to-transparent" />
+
+                              {backgroundType === "image" && backgroundStyle === item.id && (
+                                <div className="absolute left-3 top-3 rounded-full bg-emerald-400 px-3 py-1 text-xs font-black text-black">
+                                  نشط
+                                </div>
+                              )}
+
+                              <div className="absolute inset-x-0 bottom-0 p-4">
+                                <p className="text-lg font-black text-white">{item.title}</p>
+                                <p className="mt-1 text-xs leading-5 text-neutral-300">{item.description}</p>
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => fetchBackgroundVideo(backgroundStyle)}
-                      disabled={loadingBackground}
-                      className="secondary-button w-full px-5 py-4 disabled:opacity-60"
-                    >
-                      {loadingBackground
-                        ? "جاري جلب خلفية..."
-                        : "تغيير الخلفية عشوائيًا"}
-                    </button>
+                    <div className="rounded-[24px] border border-white/10 bg-black/25 p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-black text-white">فيديو كخيار ثانوي</p>
+                          <p className="mt-1 text-xs leading-6 text-neutral-400">
+                            استخدمه فقط لو عايز حركة في الخلفية.
+                          </p>
+                        </div>
+                        <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[11px] font-black text-neutral-200">Optional</span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        {videoBackgroundCards.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={async () => {
+                              setBackgroundStyle(item.id);
+                              await fetchBackgroundVideo(item.id);
+                            }}
+                            className={`group relative overflow-hidden rounded-[28px] border text-right transition duration-300 hover:-translate-y-1 ${
+                              backgroundType === "video" && backgroundStyle === item.id
+                                ? "border-cyan-300/70 shadow-[0_0_45px_rgba(34,211,238,0.20)]"
+                                : "border-white/10 hover:border-cyan-300/35"
+                            }`}
+                          >
+                            <div className="relative h-32 overflow-hidden bg-black">
+                              <img
+                                src={item.image}
+                                alt={item.title}
+                                className="h-full w-full object-cover opacity-80 transition duration-700 group-hover:scale-110"
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black via-black/45 to-transparent" />
+
+                              {backgroundType === "video" && backgroundStyle === item.id && (
+                                <div className="absolute left-3 top-3 rounded-full bg-cyan-300 px-3 py-1 text-xs font-black text-black">
+                                  فيديو نشط
+                                </div>
+                              )}
+
+                              <div className="absolute inset-x-0 bottom-0 p-4">
+                                <p className="text-base font-black text-white">{item.title}</p>
+                                <p className="mt-1 text-[11px] leading-5 text-neutral-300">{item.description}</p>
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => fetchBackgroundVideo(backgroundStyle)}
+                        disabled={loadingBackground || backgroundType !== "video"}
+                        className="secondary-button mt-3 w-full px-5 py-4 disabled:opacity-60"
+                      >
+                        {loadingBackground
+                          ? "جاري جلب فيديو..."
+                          : "تغيير الفيديو عشوائيًا"}
+                      </button>
+                    </div>
 
                     <div className="rounded-[24px] border border-dashed border-white/15 bg-black/25 p-4">
                       <label className="mb-3 block text-sm font-bold text-neutral-200">
@@ -2501,18 +2686,11 @@ export default function Home() {
                         <button
                           type="button"
                           onClick={() => {
-                            setBackgroundVideoUrl("");
-                            setBackgroundType("video");
-                            setCustomBackgroundName("");
-                            setCustomBackgroundSize(null);
-                            setCustomBackgroundMimeType("");
-                            setDownloadUrl("");
-                            setPreviewSeekSeconds(0);
-                            setPreviewPlaying(false);
+                            selectImageBackground(DEFAULT_IMAGE_BACKGROUND);
                           }}
                           className="mt-4 w-full rounded-2xl border border-red-400/30 bg-red-500/10 px-3 py-3 font-bold text-red-200 transition hover:bg-red-500/20"
                         >
-                          حذف الخلفية المرفوعة
+                          حذف الخلفية المرفوعة والرجوع للصورة الافتراضية
                         </button>
                       </div>
                     )}

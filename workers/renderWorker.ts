@@ -146,11 +146,16 @@ async function renderQuranVideo({
     throw new Error("لا توجد آيات للتصدير");
   }
 
-  if (!body.backgroundVideoUrl) {
+  const normalizedBackgroundUrl = normalizePublicAssetUrl(
+    body.backgroundVideoUrl,
+    publicSiteUrl,
+  );
+
+  if (!normalizedBackgroundUrl) {
     throw new Error("لا توجد خلفية للتصدير");
   }
 
-  await assertAssetAvailable(body.backgroundVideoUrl, "الخلفية");
+  await assertAssetAvailable(normalizedBackgroundUrl, "الخلفية");
 
   if (showBismillahIntro) {
     await assertAssetAvailable(bismillahAudioUrl, "صوت البسملة");
@@ -207,16 +212,13 @@ async function renderQuranVideo({
     hookText,
     hookDuration,
     hookStyle,
-    showHookSound: body.showHookSound ?? true,
-    hookSoundUrl: body.hookSoundUrl || undefined,
-    hookSoundVolume: Number(body.hookSoundVolume ?? 0.42),
 
     textColor: body.textColor || "#ffffff",
     textSize: Number(body.textSize || 72),
     fontFamily: normalizeRenderFontFamily(body.fontFamily),
 
     backgroundStyle: body.backgroundStyle || "emerald",
-    backgroundVideoUrl: body.backgroundVideoUrl,
+    backgroundVideoUrl: normalizedBackgroundUrl,
     backgroundVideoDuration: Number(body.backgroundVideoDuration || 0),
     totalVideoDuration: Number(totalDurationInSeconds || body.totalVideoDuration || 0),
     backgroundType: body.backgroundType || "video",
@@ -251,26 +253,26 @@ async function renderQuranVideo({
     showSurahName: body.showSurahName ?? true,
     surahName: body.surahName || "",
     surahNameColor: body.surahNameColor || "#ffffff",
-    surahNameSize: Number(body.surahNameSize || 45),
+    surahNameSize: Number(body.surahNameSize || 38),
     surahNamePosition: body.surahNamePosition || "top",
-    surahNameX: Number(body.surahNameX ?? 35),
+    surahNameX: Number(body.surahNameX ?? 15),
     surahNameY: Number(body.surahNameY ?? 90),
 
     showReciterName: body.showReciterName ?? true,
     reciter: body.reciter || "",
     reciterNameColor: body.reciterNameColor || "#34d399",
-    reciterNameSize: Number(body.reciterNameSize || 34),
+    reciterNameSize: Number(body.reciterNameSize || 28),
     reciterNamePosition: body.reciterNamePosition || "bottom",
-    reciterNameX: Number(body.reciterNameX ?? 69),
+    reciterNameX: Number(body.reciterNameX ?? 85),
     reciterNameY: Number(body.reciterNameY ?? 90),
 
     showBrandName: body.showBrandName ?? true,
     brandName: body.brandName || "وذكر | wzkerq",
     brandNameColor: body.brandNameColor || "#ffffff",
-    brandNameSize: Number(body.brandNameSize || 35),
+    brandNameSize: Number(body.brandNameSize || 24),
     brandNamePosition: body.brandNamePosition || "bottom",
     brandNameX: Number(body.brandNameX ?? 50),
-    brandNameY: Number(body.brandNameY ?? 15),
+    brandNameY: Number(body.brandNameY ?? 10),
     brandNameStyle: body.brandNameStyle || "glass",
 
     showProgressBar: body.showProgressBar ?? true,
@@ -598,6 +600,20 @@ function getAssetCheckConcurrency() {
   }
 
   return 2;
+}
+
+function normalizePublicAssetUrl(url: string, publicSiteUrl: string) {
+  const value = String(url || "").trim();
+
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value)) return value;
+  if (value.startsWith("file:")) return value;
+
+  if (value.startsWith("/")) {
+    return `${publicSiteUrl.replace(/\/$/, "")}${value}`;
+  }
+
+  return `${publicSiteUrl.replace(/\/$/, "")}/${value.replace(/^\/+/, "")}`;
 }
 
 async function assertAssetAvailable(url: string, label: string): Promise<void> {
