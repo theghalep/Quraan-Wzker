@@ -2,7 +2,10 @@ import path from "path";
 import { mkdir, readdir, stat, unlink } from "fs/promises";
 import { Worker } from "bullmq";
 import { redis } from "../lib/queue/redis";
-import { getRenderJob, updateRenderJob } from "../lib/queue/renderJobStore";
+import {
+  isRenderJobCancellationRequested,
+  updateRenderJob,
+} from "../lib/queue/renderJobStore";
 
 type ExportSettings = {
   preset: string;
@@ -19,11 +22,11 @@ type ExportSettings = {
 
 let cachedBundle: string | null = null;
 let cachedBundleAt = 0;
-let cachedBundleSignature = "";
 let cachedRuntimePromise: Promise<{
   bundle: any;
   renderMedia: any;
   selectComposition: any;
+  makeCancelSignal: any;
 }> | null = null;
 
 const BUNDLE_CACHE_TTL = 1000 * 60 * 60 * 2;
@@ -43,7 +46,6 @@ const DEFAULT_BISMILLAH_DURATION_SECONDS = 3.2;
 const DEFAULT_HOOK_DURATION_SECONDS = 2.5;
 const DEFAULT_HOOK_TEXT = "توقّف لحظة… هذه الآية لك";
 const BISMILLAH_TEXT = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ";
-const RENDER_CANCELLED_CODE = "RENDER_CANCELLED";
 
 // In local development, Remotion bundle caching hides changes made to
 // remotion/Video.tsx. Keep production fast, but always rebuild locally.
@@ -70,12 +72,19 @@ new Worker(
       console.log("Render completed:", jobId);
       return result;
     } catch (error: any) {
-      if (isRenderCancelledError(error)) {
-        console.log("Render cancelled:", jobId);
-        return { jobId, status: "cancelled", progress: 0 };
-      }
-
       console.error("RENDER_WORKER_ERROR:", error);
+
+      if (isCancelledRenderError(error)) {
+        await updateRenderJob(jobId, {
+          status: "cancelled",
+          progress: 0,
+          message: "تم إلغاء التصدير",
+          cancelRequested: true,
+          cancelledAt: new Date().toISOString(),
+          completedAt: new Date().toISOString(),
+        });
+        return { jobId, status: "cancelled" };
+      }
 
       await updateRenderJob(jobId, {
         status: "failed",
@@ -109,9 +118,24 @@ async function renderQuranVideo({
 }) {
   const ayahs = Array.isArray(body.ayahs) ? body.ayahs : [];
 
+  if (await isRenderJobCancellationRequested(jobId)) {
+    await updateRenderJob(jobId, {
+      status: "cancelled",
+      progress: 0,
+      message: "تم إلغاء التصدير",
+      cancelRequested: true,
+      cancelledAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+    });
+
+    return { jobId, status: "cancelled", progress: 0 };
+  }
+
   if (!incomingExportSettings) {
     throw new Error("Missing export settings for render job");
   }
+
+  await throwIfCancelled(jobId);
 
   const exportSettings = normalizeExportSettings(incomingExportSettings);
   const safeRenderScale = getIntegerSafeRenderScale(
@@ -152,7 +176,6 @@ async function renderQuranVideo({
     progress: 5,
     message: "جاري فحص الخلفية وملفات الصوت",
   });
-  await assertRenderNotCancelled(jobId);
 
   if (!ayahs.length) {
     throw new Error("لا توجد آيات للتصدير");
@@ -205,7 +228,7 @@ async function renderQuranVideo({
     Math.ceil(5 * exportSettings.fps),
   );
 
-  const { bundle, renderMedia, selectComposition } = await loadRemotionRuntime();
+  const { bundle, renderMedia, selectComposition, makeCancelSignal } = await loadRemotionRuntime();
 
   // Do NOT inject precomputed caption layout into the render.
   // The final typography is now calculated inside remotion/Video.tsx from the
@@ -334,13 +357,11 @@ async function renderQuranVideo({
   );
 
   const entry = path.join(process.cwd(), "remotion", "Root.tsx");
-  const bundleSignature = await getRemotionBundleSignature(entry);
 
   const shouldUseBundleCache = !DISABLE_BUNDLE_CACHE;
   const shouldRebuildBundle =
     !shouldUseBundleCache ||
     !cachedBundle ||
-    cachedBundleSignature !== bundleSignature ||
     Date.now() - cachedBundleAt > BUNDLE_CACHE_TTL;
 
   let bundled = shouldUseBundleCache ? cachedBundle : null;
@@ -362,11 +383,9 @@ async function renderQuranVideo({
     if (shouldUseBundleCache) {
       cachedBundle = bundled;
       cachedBundleAt = Date.now();
-      cachedBundleSignature = bundleSignature;
     } else {
       cachedBundle = null;
       cachedBundleAt = 0;
-      cachedBundleSignature = "";
     }
   } else {
     await updateRenderJob(jobId, {
@@ -379,6 +398,8 @@ async function renderQuranVideo({
   if (!bundled) {
     throw new Error("Failed to create Remotion bundle");
   }
+
+  await throwIfCancelled(jobId);
 
   const composition = await selectComposition({
     serveUrl: bundled,
@@ -423,7 +444,7 @@ async function renderQuranVideo({
 
   await cleanupOldExports(exportsDir);
 
-  await assertRenderNotCancelled(jobId);
+  await throwIfCancelled(jobId);
 
   await updateRenderJob(jobId, {
     status: "rendering",
@@ -443,6 +464,61 @@ async function renderQuranVideo({
   let lastProgressUpdateAt = 0;
   let lastReportedProgress = 24;
 
+  const { cancelSignal, cancel } = makeCancelSignal();
+  let cancelPollIsRunning = false;
+  let cancellationStarted = false;
+  let hardExitTimer: NodeJS.Timeout | null = null;
+
+  const markCancelledAndStop = async () => {
+    if (cancellationStarted) return;
+    cancellationStarted = true;
+
+    console.log(JSON.stringify({ type: "render-cancel-requested", jobId }));
+
+    await updateRenderJob(jobId, {
+      status: "cancelled",
+      progress: 0,
+      message: "تم إلغاء التصدير",
+      cancelRequested: true,
+      cancelledAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+    });
+
+    await unlink(outputLocation).catch(() => undefined);
+
+    try {
+      cancel();
+    } catch (error: any) {
+      console.warn("RENDER_CANCEL_SIGNAL_ERROR:", error?.message || error);
+    }
+
+    // Remotion normally stops as soon as cancelSignal is triggered. If Chrome or
+    // FFmpeg is stuck, hard-exit this worker process so PM2 restarts it. Because
+    // the Redis cancellation flag persists, BullMQ will not render this job again.
+    hardExitTimer = setTimeout(() => {
+      console.error(JSON.stringify({ type: "render-cancel-hard-exit", jobId }));
+      process.exit(130);
+    }, 4500);
+  };
+
+  const cancelPoll = setInterval(() => {
+    if (cancelPollIsRunning || cancellationStarted) return;
+    cancelPollIsRunning = true;
+
+    isRenderJobCancellationRequested(jobId)
+      .then((cancelled) => {
+        if (cancelled) {
+          return markCancelledAndStop();
+        }
+      })
+      .catch((error: any) => {
+        console.warn("RENDER_CANCEL_POLL_ERROR:", error?.message || error);
+      })
+      .finally(() => {
+        cancelPollIsRunning = false;
+      });
+  }, 500);
+
   try {
     await renderMedia({
     composition: finalComposition,
@@ -453,6 +529,7 @@ async function renderQuranVideo({
 
     outputLocation,
     inputProps,
+    cancelSignal,
 
     crf: getRenderCrf(exportSettings.quality, exportSettings.crf),
     audioBitrate: getAudioBitrate(exportSettings.audioBitrate),
@@ -476,7 +553,10 @@ async function renderQuranVideo({
     timeoutInMilliseconds: RENDER_TIMEOUT_MS,
 
     onProgress: async ({ progress }: { progress: number }) => {
-      await assertRenderNotCancelled(jobId, outputLocation);
+      if (await isRenderJobCancellationRequested(jobId)) {
+        await markCancelledAndStop();
+        throw new CancelledRenderError();
+      }
 
       const renderProgress = Math.round(progress * 100);
       const totalProgress = Math.min(
@@ -516,22 +596,29 @@ async function renderQuranVideo({
     },
   });
   } catch (error: any) {
-    if (isRenderCancelledError(error) || (await isCurrentRenderCancelled(jobId))) {
+    if (isCancelledRenderError(error) || String(error?.message || error).toLowerCase().includes("cancel")) {
       await unlink(outputLocation).catch(() => undefined);
       await updateRenderJob(jobId, {
-        status: "cancelled" as any,
+        status: "cancelled",
         progress: 0,
-        message: "تم إلغاء التصدير وحذف الملف المؤقت",
-        error: "تم إلغاء التصدير",
+        message: "تم إلغاء التصدير",
+        cancelRequested: true,
+        cancelledAt: new Date().toISOString(),
         completedAt: new Date().toISOString(),
       });
-      throw createRenderCancelledError();
+
+      return { jobId, status: "cancelled", progress: 0 };
     }
 
     throw error;
+  } finally {
+    clearInterval(cancelPoll);
+    if (hardExitTimer) {
+      clearTimeout(hardExitTimer);
+    }
   }
 
-  await assertRenderNotCancelled(jobId, outputLocation);
+  await throwIfCancelled(jobId, outputLocation);
 
   const encodedFileName = encodeURIComponent(fileName);
   const url = `${publicSiteUrl}/exports/${encodedFileName}`;
@@ -568,47 +655,26 @@ async function renderQuranVideo({
   };
 }
 
-
-function createRenderCancelledError() {
-  const error = new Error("تم إلغاء التصدير");
-  (error as any).code = RENDER_CANCELLED_CODE;
-  return error;
+class CancelledRenderError extends Error {
+  constructor() {
+    super("Render cancelled");
+    this.name = "CancelledRenderError";
+  }
 }
 
-function isRenderCancelledError(error: any) {
-  return error?.code === RENDER_CANCELLED_CODE;
+function isCancelledRenderError(error: any) {
+  const message = String(error?.message || error || "").toLowerCase();
+  return error instanceof CancelledRenderError || message.includes("cancel");
 }
 
-async function isCurrentRenderCancelled(jobId: string) {
-  const current = await getRenderJob(jobId);
-  return current?.status === "cancelled";
-}
-
-async function assertRenderNotCancelled(jobId: string, outputLocation?: string) {
-  if (!(await isCurrentRenderCancelled(jobId))) return;
+async function throwIfCancelled(jobId: string, outputLocation?: string) {
+  if (!(await isRenderJobCancellationRequested(jobId))) return;
 
   if (outputLocation) {
     await unlink(outputLocation).catch(() => undefined);
   }
 
-  throw createRenderCancelledError();
-}
-
-async function getRemotionBundleSignature(entry: string) {
-  const candidates = [
-    entry,
-    path.join(process.cwd(), "remotion", "Video.tsx"),
-    path.join(process.cwd(), "package.json"),
-  ];
-
-  const parts = await Promise.all(
-    candidates.map(async (filePath) => {
-      const fileStat = await stat(filePath).catch(() => null);
-      return `${filePath}:${fileStat?.mtimeMs || 0}:${fileStat?.size || 0}`;
-    }),
-  );
-
-  return parts.join("|");
+  throw new CancelledRenderError();
 }
 
 async function loadRemotionRuntime() {
@@ -628,6 +694,7 @@ async function loadRemotionRuntime() {
         bundle: bundler.bundle,
         renderMedia: renderer.renderMedia,
         selectComposition: renderer.selectComposition,
+        makeCancelSignal: renderer.makeCancelSignal,
       };
     })();
   }
@@ -1170,25 +1237,10 @@ function getIntegerSafeRenderScale(
   height: number,
   requestedScale: number,
 ) {
-  const safeWidth = makeEvenInteger(width || 1080);
-  const safeHeight = makeEvenInteger(height || 1920);
-  const requested = clampNumber(Number(requestedScale || 1), 0.5, 1);
-
-  const bestSafeScale =
-    SAFE_RENDER_SCALES.find((scale) => {
-      const scaledWidth = safeWidth * scale;
-      const scaledHeight = safeHeight * scale;
-
-      return (
-        scale <= requested &&
-        Number.isInteger(scaledWidth) &&
-        Number.isInteger(scaledHeight) &&
-        scaledWidth % 2 === 0 &&
-        scaledHeight % 2 === 0
-      );
-    }) || 1;
-
-  return bestSafeScale;
+  // Keep server exports at 1x. Lower Remotion scale changes Arabic font
+  // metrics in headless Chromium and can make lines overflow compared
+  // with preview/local export.
+  return 1;
 }
 
 function makeEvenInteger(value: number) {
@@ -1200,17 +1252,8 @@ function makeEvenInteger(value: number) {
 }
 
 function getRenderScale(exportSettings: Partial<ExportSettings>) {
-  const envScale = Number(process.env.REMOTION_RENDER_SCALE);
-
-  if (Number.isFinite(envScale) && envScale > 0) {
-    return clampNumber(envScale, 0.55, 1);
-  }
-
-  if (exportSettings.quality === "draft") return 0.62;
-  if (exportSettings.quality === "standard") return 0.72;
-  if (exportSettings.quality === "ultra") return 0.9;
-
-  return clampNumber(Number(exportSettings.renderScale || 0.8), 0.7, 0.86);
+  // Force 1x rendering for typography consistency on EC2.
+  return 1;
 }
 
 function getRenderCrf(quality: string, incomingCrf: number) {

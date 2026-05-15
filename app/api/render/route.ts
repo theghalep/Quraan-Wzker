@@ -7,7 +7,7 @@ import {
   getRecentRenderJobs,
   getRenderJob,
   updateRenderJob,
-  cancelRenderJob,
+  requestRenderJobCancellation,
 } from "@/lib/queue/renderJobStore";
 
 export const runtime = "nodejs";
@@ -46,6 +46,8 @@ type RenderJobResponse = {
   updatedAt: string;
   completedAt?: string;
   error?: string;
+  cancelRequested?: boolean;
+  cancelledAt?: string;
   exportPreset?: string;
   exportQuality?: string;
   exportWidth?: number;
@@ -102,7 +104,7 @@ const EXPORT_QUALITIES = {
     crf: 34,
     audioBitrate: "80k",
     fps: 24,
-    renderScale: 0.62,
+    renderScale: 1,
   },
 
   standard: {
@@ -110,7 +112,7 @@ const EXPORT_QUALITIES = {
     crf: 30,
     audioBitrate: "96k",
     fps: 24,
-    renderScale: 0.72,
+    renderScale: 1,
   },
 
   high: {
@@ -118,7 +120,7 @@ const EXPORT_QUALITIES = {
     crf: 24,
     audioBitrate: "128k",
     fps: 30,
-    renderScale: 0.82,
+    renderScale: 1,
   },
 
   ultra: {
@@ -126,7 +128,7 @@ const EXPORT_QUALITIES = {
     crf: 21,
     audioBitrate: "160k",
     fps: 30,
-    renderScale: 0.92,
+    renderScale: 1,
   },
 } as const;
 
@@ -317,7 +319,10 @@ export async function DELETE(request: NextRequest) {
 
     if (!jobId) {
       return NextResponse.json(
-        { success: false, message: "معرف التصدير غير موجود" },
+        {
+          success: false,
+          message: "Job ID مطلوب لإلغاء التصدير",
+        },
         { status: 400 },
       );
     }
@@ -327,54 +332,41 @@ export async function DELETE(request: NextRequest) {
 
     if (!redisJob && !bullJob) {
       return NextResponse.json(
-        { success: false, message: "لم يتم العثور على مهمة التصدير" },
+        {
+          success: false,
+          message: "لم يتم العثور على مهمة التصدير",
+        },
         { status: 404 },
       );
     }
 
-    await cancelRenderJob(jobId);
+    await requestRenderJobCancellation(jobId);
 
-    const fileNameToDelete = redisJob?.fileName || bullJob?.returnvalue?.fileName || "";
-    if (fileNameToDelete && !fileNameToDelete.includes("..") && !fileNameToDelete.includes("/")) {
-      await unlink(path.join(process.cwd(), "public", "exports", fileNameToDelete)).catch(() => undefined);
-    }
-
-    let removedFromQueue = false;
-    let wasActive = false;
-
+    // Waiting/delayed jobs can be removed immediately. Active jobs cannot be
+    // forcibly removed from BullMQ; the worker sees the Redis cancellation flag
+    // and stops renderMedia() through Remotion's cancelSignal.
     if (bullJob) {
       try {
-        wasActive = await bullJob.isActive();
-      } catch {
-        wasActive = false;
-      }
-
-      try {
-        await bullJob.discard();
-      } catch {
-        // ignore discard errors
-      }
-
-      try {
-        if (!wasActive) {
+        const state = await bullJob.getState();
+        if (["waiting", "delayed", "prioritized", "paused"].includes(state)) {
           await bullJob.remove();
-          removedFromQueue = true;
         }
-      } catch {
-        // Active jobs cannot be removed directly. The worker checks the
-        // cancelled Redis state and aborts on the next progress tick.
+      } catch (error) {
+        console.warn("RENDER_CANCEL_BULL_REMOVE_SKIPPED:", error);
       }
+    }
+
+    const fileName = redisJob?.fileName || bullJob?.returnvalue?.fileName;
+    if (fileName) {
+      await unlink(path.join(process.cwd(), "public", "exports", fileName)).catch(() => undefined);
     }
 
     return NextResponse.json({
       success: true,
       jobId,
       status: "cancelled",
-      removedFromQueue,
-      wasActive,
-      message: wasActive
-        ? "تم إرسال طلب الإلغاء. سيتم إيقاف الرندر الجاري وحذف الملف المؤقت."
-        : "تم إلغاء التصدير وحذفه من قائمة الانتظار",
+      progress: 0,
+      message: "تم إرسال أمر الإلغاء. لو الرندر بدأ بالفعل سيتم إيقافه من worker خلال ثواني.",
     });
   } catch (error: any) {
     console.error("RENDER_DELETE_ERROR:", error);
@@ -382,8 +374,8 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: error?.message || "Failed to cancel render job",
-        message: "حدث خطأ أثناء إلغاء التصدير",
+        error: error?.message || String(error),
+        message: "تعذر إلغاء التصدير",
       },
       { status: 500 },
     );
@@ -428,6 +420,8 @@ function normalizeJobResponse(
       status === "failed"
         ? redisJob?.error || bullJob?.failedReason || undefined
         : undefined,
+    cancelRequested: Boolean(redisJob?.cancelRequested),
+    cancelledAt: redisJob?.cancelledAt,
     createdAt,
     updatedAt,
     completedAt:
@@ -455,12 +449,12 @@ function getBullJobStatus(job: any | null): RenderJobStatus {
 function normalizeStatus(status: string | undefined): RenderJobStatus {
   if (
     status === "queued" ||
-    status === "cancelled" ||
     status === "validating" ||
     status === "bundling" ||
     status === "rendering" ||
     status === "completed" ||
-    status === "failed"
+    status === "failed" ||
+    status === "cancelled"
   ) {
     return status;
   }
@@ -470,8 +464,8 @@ function normalizeStatus(status: string | undefined): RenderJobStatus {
 
 function getDefaultStatusMessage(status: RenderJobStatus) {
   if (status === "completed") return "تم التصدير بنجاح";
-  if (status === "cancelled") return "تم إلغاء التصدير";
   if (status === "failed") return "فشل التصدير";
+  if (status === "cancelled") return "تم إلغاء التصدير";
   if (status === "validating") return "جاري فحص الملفات";
   if (status === "bundling") return "جاري تجهيز Remotion";
   if (status === "rendering") return "جاري التصدير";

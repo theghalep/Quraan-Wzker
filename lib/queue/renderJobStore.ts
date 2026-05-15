@@ -20,7 +20,6 @@ export type RenderJobRecord = {
   createdAt?: string;
   updatedAt?: string;
   completedAt?: string;
-  cancelledAt?: string;
   durationInSeconds?: number;
   durationInFrames?: number;
   exportPreset?: string;
@@ -28,6 +27,8 @@ export type RenderJobRecord = {
   exportWidth?: number;
   exportHeight?: number;
   exportFps?: number;
+  cancelRequested?: boolean;
+  cancelledAt?: string;
 };
 
 const JOB_TTL_SECONDS = 60 * 60 * 24;
@@ -35,9 +36,14 @@ const COMPLETED_JOB_TTL_SECONDS = 60 * 60 * 6;
 const FAILED_JOB_TTL_SECONDS = 60 * 60 * 12;
 const RENDER_JOBS_INDEX_KEY = "render-jobs:index";
 const MAX_RENDER_JOBS_INDEX_SIZE = 100;
+const CANCEL_TTL_SECONDS = 60 * 60 * 6;
 
 function getJobKey(jobId: string) {
   return `render-job:${jobId}`;
+}
+
+function getCancelKey(jobId: string) {
+  return `render-job-cancel:${jobId}`;
 }
 
 function getJobTtl(status?: RenderJobStatus) {
@@ -121,23 +127,37 @@ export async function deleteRenderJob(jobId: string) {
   await redis
     .multi()
     .del(getJobKey(jobId))
+    .del(getCancelKey(jobId))
     .zrem(RENDER_JOBS_INDEX_KEY, jobId)
     .exec();
 }
 
+export async function requestRenderJobCancellation(jobId: string) {
+  const now = new Date().toISOString();
 
-export async function cancelRenderJob(jobId: string, message = "تم إلغاء التصدير") {
+  await redis.set(getCancelKey(jobId), now, "EX", CANCEL_TTL_SECONDS);
+
   return updateRenderJob(jobId, {
     status: "cancelled",
+    cancelRequested: true,
     progress: 0,
-    message,
-    error: message,
-    cancelledAt: new Date().toISOString(),
-    completedAt: new Date().toISOString(),
+    message: "تم إلغاء التصدير",
+    cancelledAt: now,
+    completedAt: now,
   });
 }
 
-export async function isRenderJobCancelled(jobId: string) {
+export async function clearRenderJobCancellation(jobId: string) {
+  await redis.del(getCancelKey(jobId));
+}
+
+export async function isRenderJobCancellationRequested(jobId: string) {
+  const cancelRequestedAt = await redis.get(getCancelKey(jobId));
+
+  if (cancelRequestedAt) {
+    return true;
+  }
+
   const job = await getRenderJob(jobId);
-  return job?.status === "cancelled";
+  return Boolean(job?.cancelRequested || job?.status === "cancelled");
 }

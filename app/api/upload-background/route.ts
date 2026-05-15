@@ -57,15 +57,14 @@ export async function POST(request: Request) {
 
     await writeFile(filePath, buffer);
 
-    // Return a root-relative URL for browser preview.
-    // The render worker will convert it to the current public site URL, which
-    // avoids production bugs where NEXT_PUBLIC_SITE_URL still points to localhost.
-    const url = `/uploads/${safeName}`;
+    const publicUploadUrl = `/api/upload-background/file/${encodeURIComponent(safeName)}`;
 
     return NextResponse.json({
-      url,
+      url: publicUploadUrl,
+      publicUrl: publicUploadUrl,
       type: file.type.startsWith("image/") ? "image" : "video",
       name: file.name,
+      storedName: safeName,
       size: file.size,
       mimeType: file.type,
     });
