@@ -32,6 +32,7 @@ type QuranReelProps = {
   textPosition: string;
   animationStyle: string;
   wordSpeed: string;
+  captionDisplayMode?: "paged" | "line" | "scroll";
 
   showWordHighlight?: boolean;
   wordHighlightColor?: string;
@@ -107,6 +108,7 @@ const defaultProps: QuranReelProps = {
   textPosition: "center",
   animationStyle: "slide",
   wordSpeed: "normal",
+  captionDisplayMode: "paged",
 
   showWordHighlight: true,
   wordHighlightColor: "#facc15",

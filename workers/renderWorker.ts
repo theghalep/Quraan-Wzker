@@ -218,7 +218,7 @@ async function renderQuranVideo({
     hookStyle,
 
     textColor: body.textColor || "#ffffff",
-    textSize: Math.max(Number(body.textSize || 82), 78),
+    textSize: Math.max(Number(body.textSize || 88), 84),
     fontFamily: normalizeRenderFontFamily(body.fontFamily),
 
     backgroundStyle: body.backgroundStyle || "emerald",
@@ -232,6 +232,7 @@ async function renderQuranVideo({
     textPosition: body.textPosition || "center",
     animationStyle: body.animationStyle || "slide",
     wordSpeed: body.wordSpeed || "normal",
+    captionDisplayMode: body.captionDisplayMode || "paged",
 
     showWordHighlight: body.showWordHighlight ?? true,
     wordHighlightColor: body.wordHighlightColor || "#34d399",
@@ -252,7 +253,7 @@ async function renderQuranVideo({
     showTafsir: body.showTafsir ?? false,
     tafsirText: body.tafsirText || "",
     tafsirColor: body.tafsirColor || "rgba(255,255,255,0.88)",
-    tafsirSize: Math.max(Number(body.tafsirSize || 30), 28),
+    tafsirSize: Math.max(Number(body.tafsirSize || 34), 30),
 
     showSurahName: body.showSurahName ?? true,
     surahName: body.surahName || "",

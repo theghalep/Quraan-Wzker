@@ -712,6 +712,7 @@ function getTimelineItemBySeconds(timeline: TimelineItem[], seconds: number) {
 }
 
 function VideoCanvas({
+  safeAyahs,
   currentAyah,
   currentAyahLocalSeconds,
   videoProgress,
@@ -863,16 +864,57 @@ function VideoCanvas({
     isRemotionRender,
   );
   const safeSurahTitle = formatSurahTitle(surahName);
+  const resolvedTafsirText = getStableSharedTafsirForCurrentAyah(
+    safeAyahs,
+    currentAyah,
+  );
+
+  const previewCanvasRef = useRef<HTMLDivElement | null>(null);
+  const [previewScale, setPreviewScale] = useState(1);
+
+  useEffect(() => {
+    if (isRemotionRender) return;
+
+    const element = previewCanvasRef.current;
+    const parent = element?.parentElement;
+    if (!element || !parent) return;
+
+    const updatePreviewScale = () => {
+      const parentRect = parent.getBoundingClientRect();
+      const targetWidth = Math.max(Number(exportWidth || 1080), 1);
+      const targetHeight = Math.max(Number(exportHeight || 1920), 1);
+      const nextScale = Math.min(
+        parentRect.width / targetWidth,
+        parentRect.height / targetHeight,
+      );
+
+      setPreviewScale(Number.isFinite(nextScale) && nextScale > 0 ? nextScale : 1);
+    };
+
+    updatePreviewScale();
+
+    const resizeObserver = new ResizeObserver(updatePreviewScale);
+    resizeObserver.observe(parent);
+
+    return () => resizeObserver.disconnect();
+  }, [isRemotionRender, exportWidth, exportHeight]);
 
   return (
     <>
       <style suppressHydrationWarning>{`${QURAN_FONT_FACE_CSS}${animationStyleTag}`}</style>
 
       <div
+        ref={previewCanvasRef}
         style={{
-          width: "100%",
-          height: "100%",
-          position: "relative",
+          width: isRemotionRender ? "100%" : exportWidth,
+          height: isRemotionRender ? "100%" : exportHeight,
+          position: isRemotionRender ? "relative" : "absolute",
+          left: isRemotionRender ? undefined : "50%",
+          top: isRemotionRender ? undefined : "50%",
+          transform: isRemotionRender
+            ? undefined
+            : `translate(-50%, -50%) scale(${previewScale})`,
+          transformOrigin: "center center",
           overflow: "hidden",
           background: "#000",
           direction: "rtl",
@@ -992,7 +1034,7 @@ function VideoCanvas({
               (isLandscapeExport ? 0.78 : isSquareExport ? 0.9 : 1)
             }
             position={surahNamePosition}
-            x={surahNameX}
+            x={getSeparatedBottomLabelX(surahNameX, "surah")}
             y={surahNameY}
             top={45}
             bottom={105}
@@ -1010,7 +1052,7 @@ function VideoCanvas({
               (isLandscapeExport ? 0.78 : isSquareExport ? 0.9 : 1)
             }
             position={reciterNamePosition}
-            x={reciterNameX}
+            x={getSeparatedBottomLabelX(reciterNameX, "reciter")}
             y={reciterNameY}
             top={95}
             bottom={65}
@@ -1044,7 +1086,6 @@ function VideoCanvas({
         )}
 
         <div
-          key={`${currentAyah?.__isBismillahIntro ? "bismillah" : currentAyah?.numberInSurah || "ayah"}-${currentAyah?.text}`}
           style={{
             position: "absolute",
             left: 0,
@@ -1142,9 +1183,10 @@ function VideoCanvas({
             {showTafsir &&
               !currentAyah?.__isHookIntro &&
               !currentAyah?.__isBismillahIntro &&
-              (currentAyah?.tafsir || tafsirText) && (
+              resolvedTafsirText && (
                 <TafsirText
-                  text={currentAyah?.tafsir || tafsirText}
+                  key={`tafsir-${getTafsirStableKey(resolvedTafsirText)}`}
+                  text={resolvedTafsirText}
                   color={tafsirColor}
                   size={tafsirSize}
                   isLandscapeCaption={Boolean((captionLayout as any).isLandscape)}
@@ -1415,14 +1457,14 @@ function TafsirText({
   return (
     <div
       style={{
-        marginTop: isLandscapeCaption ? "1.35em" : "1.62em",
+        marginTop: isLandscapeCaption ? "1.45em" : "1.62em",
         marginInline: "auto",
         padding: 0,
         width: "100%",
-        maxWidth: isLandscapeCaption ? "99%" : "98%",
+        maxWidth: isLandscapeCaption ? "100%" : "100%",
         color,
         fontSize: safeSize,
-        lineHeight: isLandscapeCaption ? 1.62 : 1.72,
+        lineHeight: isLandscapeCaption ? 1.58 : 1.64,
         fontWeight: 900,
         fontFamily: LABEL_FONT_STACK,
         textAlign: "center",
@@ -1447,6 +1489,56 @@ function TafsirText({
   );
 }
 
+
+function getStableSharedTafsirForCurrentAyah(
+  ayahs: Ayah[],
+  currentAyah?: Ayah,
+) {
+  if (!currentAyah || currentAyah.__isHookIntro || currentAyah.__isBismillahIntro) {
+    return "";
+  }
+
+  const currentText = normalizeTafsirText(currentAyah.tafsir || "");
+  if (currentText) {
+    return currentText;
+  }
+
+  const currentIndex = ayahs.findIndex((ayah) => ayah === currentAyah);
+  if (currentIndex < 0) {
+    return "";
+  }
+
+  // Some tafsir sources return one explanation for a small group of adjacent ayahs.
+  // If the current ayah does not carry tafsir text by itself, keep the nearest
+  // previous tafsir visible until a new tafsir appears on a later ayah.
+  for (let index = currentIndex - 1; index >= 0; index -= 1) {
+    const previous = ayahs[index];
+
+    if (!previous || previous.__isHookIntro || previous.__isBismillahIntro) {
+      continue;
+    }
+
+    const previousTafsir = normalizeTafsirText(previous.tafsir || "");
+    if (previousTafsir) {
+      return previousTafsir;
+    }
+  }
+
+  return "";
+}
+
+function normalizeTafsirText(value: string) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getTafsirStableKey(value: string) {
+  return normalizeTafsirText(value)
+    .slice(0, 80)
+    .replace(/[^\u0600-\u06FFa-zA-Z0-9]+/g, "-");
+}
+
 function getShortTafsirText(value: string) {
   const normalized = String(value || "")
     .replace(/\s+/g, " ")
@@ -1468,7 +1560,8 @@ function getShortTafsirText(value: string) {
     return "";
   }
 
-  // Keep the full tafsir visible. Size fitting happens in TafsirText.
+  // Show the full tafsir of the CURRENT ayah only.
+  // No clipping, no ellipsis, and no fallback tafsir from other ayahs.
   return normalized;
 }
 
@@ -1510,6 +1603,22 @@ function normalizeArabicFontFamily(fontFamily: string) {
   }
 
   return "Amiri Quran";
+}
+
+
+function getSeparatedBottomLabelX(value: number | undefined, type: "surah" | "reciter") {
+  if (!Number.isFinite(value)) return value;
+
+  const numericValue = Number(value);
+
+  // The default bottom labels are intentionally pushed apart a bit so the
+  // larger cinematic pills do not overlap, while keeping both centered on the
+  // lower third and not changing their vertical placement.
+  if (type === "surah") {
+    return clampNumber(numericValue - 4, 18, 46);
+  }
+
+  return clampNumber(numericValue + 4, 54, 82);
 }
 
 function FloatingText({
@@ -1616,8 +1725,10 @@ function getOpticalCaptionLayout({
 
   // Bigger cinematic reading area like the approved reference.
   // Long ayahs are still paged/auto-fitted inside AnimatedText.
-  const zoneTopRatio = isLandscape ? 0.16 : isSquare ? 0.18 : 0.185;
-  const zoneBottomRatio = isLandscape ? 0.13 : isSquare ? 0.145 : 0.155;
+  const zoneTopRatio = isLandscape ? 0.145 : isSquare ? 0.165 : 0.17;
+  // Lift the ayah + tafsir block optically upward inside vertical exports.
+  // This removes the large empty area above the text while keeping bottom labels safe.
+  const zoneBottomRatio = isLandscape ? 0.155 : isSquare ? 0.175 : 0.225;
   const zoneTop = `${zoneTopRatio * 100}%`;
   const zoneBottom = `${zoneBottomRatio * 100}%`;
   const tafsirZoneBottom = `${Math.max(zoneBottomRatio - 0.035, 0.095) * 100}%`;
@@ -1647,8 +1758,8 @@ function getOpticalCaptionLayout({
   return {
     fontSize,
     maxWidth: isLandscape ? "94%" : isSquare ? "95%" : "96%",
-    lineHeight: isLandscape ? 1.42 : isSquare ? 1.48 : 1.58,
-    sidePadding: Math.round(safeWidth * (isLandscape ? 0.045 : 0.035)),
+    lineHeight: isLandscape ? 1.54 : isSquare ? 1.62 : 1.72,
+    sidePadding: Math.round(safeWidth * (isLandscape ? 0.035 : 0.026)) + 14,
     paddingX: 0,
     paddingY: 0,
     borderRadius: 0,
@@ -1699,10 +1810,11 @@ function getAutoFitQuranFontSize({
     else if (density <= 280) targetSize = Math.min(Math.max(targetSize, 52), 62);
     else targetSize = Math.min(Math.max(targetSize, 44), 54);
   } else {
-    if (density <= 38) targetSize = Math.max(targetSize, 112);
-    else if (density <= 70) targetSize = Math.max(targetSize, 98);
-    else if (density <= 115) targetSize = Math.min(Math.max(targetSize, 82), 94);
-    else if (density <= 190) targetSize = Math.min(Math.max(targetSize, 68), 80);
+    if (density <= 32) targetSize = Math.max(targetSize, 108);
+    else if (density <= 55) targetSize = Math.min(Math.max(targetSize, 92), 102);
+    else if (density <= 85) targetSize = Math.min(Math.max(targetSize, 82), 92);
+    else if (density <= 115) targetSize = Math.min(Math.max(targetSize, 76), 86);
+    else if (density <= 190) targetSize = Math.min(Math.max(targetSize, 68), 78);
     else if (density <= 280) targetSize = Math.min(Math.max(targetSize, 58), 68);
     else targetSize = Math.min(Math.max(targetSize, 50), 58);
   }
@@ -1886,7 +1998,7 @@ function AnimatedText({
     color,
     fontSize: safeSize,
     fontWeight: 900,
-    lineHeight: isLandscapeCaption ? 1.42 : isSquareCaption ? 1.5 : 1.62,
+    lineHeight: isLandscapeCaption ? 1.58 : isSquareCaption ? 1.7 : 1.9,
     textShadow: isRemotionRender
       ? "0 3px 9px rgba(0,0,0,0.98), 0 0 5px rgba(255,255,255,0.16)"
       : "0 4px 13px rgba(0,0,0,0.98), 0 0 11px rgba(255,255,255,0.18)",
@@ -1903,7 +2015,7 @@ function AnimatedText({
     textWrap: "balance" as any,
     whiteSpace: "normal",
     wordBreak: "normal",
-    wordSpacing: isLandscapeCaption ? "0.01em" : "0.012em",
+    wordSpacing: isLandscapeCaption ? "0.012em" : "0.018em",
     overflowWrap: "normal",
     maxWidth: "100%",
     width: "100%",
@@ -1919,7 +2031,88 @@ function AnimatedText({
         : undefined,
   };
 
-  if (!showWordHighlight || words.length <= 1) {
+  if (!showWordHighlight) {
+    const visiblePage = activePage ||
+      captionPages[0] || {
+        lines: [words.map((word, index) => ({ word, originalIndex: index }))],
+      };
+
+    return (
+      <div
+        key={`caption-page-no-highlight-${activePageIndex}`}
+        style={{
+          ...baseStyle,
+          paddingLeft: 12,
+          paddingRight: 12,
+          paddingBottom: 28,
+          overflow: "visible",
+          animation: isRemotionRender ? "none" : "fadeZoom 0.28s ease both",
+        }}
+      >
+        {visiblePage.lines.map((line, lineIndex) => (
+          <div
+            key={`caption-page-no-highlight-line-${lineIndex}`}
+            style={{
+              display: "block",
+              width: "100%",
+              direction: "rtl",
+              unicodeBidi: "plaintext" as any,
+              whiteSpace: "nowrap",
+              textWrap: "nowrap" as any,
+              textAlign: "center",
+              maxWidth: "100%",
+              overflow: "visible",
+              paddingInline: 0,
+              boxSizing: "border-box",
+              marginBlock: "0.36em",
+            }}
+          >
+            {line.map((item, visibleIndex) => (
+              <span
+                key={`${item.word}-${item.originalIndex}-plain`}
+                style={{
+                  color,
+                  display: "inline",
+                  opacity: 1,
+                  textShadow: baseStyle.textShadow,
+                  filter: "none",
+                  transform: "none",
+                  transition: isRemotionRender ? "none" : "opacity 0.12s linear",
+                }}
+              >
+                {item.word}
+                {ayahNumber &&
+                  activePageIndex === captionPages.length - 1 &&
+                  visibleIndex === line.length - 1 &&
+                  lineIndex === visiblePage.lines.length - 1 && (
+                    <span
+                      style={{
+                        display: "inline-block",
+                        marginInlineStart: Math.max(safeSize * 0.16, 7),
+                        fontSize: Math.max(safeSize * 0.42, 14),
+                        fontWeight: 900,
+                        lineHeight: 1,
+                        color: "rgba(255,255,255,0.96)",
+                        textShadow: isRemotionRender
+                          ? "0 1px 3px rgba(0,0,0,0.84)"
+                          : "0 1px 5px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.45)",
+                        verticalAlign: "-0.02em",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {`﴿${toArabicNumbers(ayahNumber)}﴾`}
+                    </span>
+                  )}
+                {visibleIndex < line.length - 1 ? " " : ""}
+              </span>
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (words.length <= 1) {
     return (
       <div style={baseStyle}>
         {text}
@@ -1951,6 +2144,10 @@ function AnimatedText({
       key={`caption-page-${activePageIndex}`}
       style={{
         ...baseStyle,
+        paddingLeft: 12,
+        paddingRight: 12,
+        paddingBottom: 28,
+        overflow: "visible",
         animation: isRemotionRender ? "none" : "fadeZoom 0.28s ease both",
       }}
     >
@@ -1962,14 +2159,14 @@ function AnimatedText({
             width: "100%",
             direction: "rtl",
             unicodeBidi: "plaintext" as any,
-            whiteSpace: "normal",
-            textWrap: "balance" as any,
+            whiteSpace: "nowrap",
+            textWrap: "nowrap" as any,
             textAlign: "center",
             maxWidth: "100%",
             overflow: "visible",
             paddingInline: 0,
             boxSizing: "border-box",
-            marginBlock: "0.16em",
+            marginBlock: "0.36em",
           }}
         >
           {line.map((item, visibleIndex) => {
@@ -2044,45 +2241,143 @@ function buildFitZoneCaptionPages({
     return [{ lines: [] }];
   }
 
-  // New approach:
-  // We page by total visual width, not by pre-forcing visual lines.
-  // Each page is rendered as one natural wrapping block using the full caption width.
-  // This avoids both problems:
-  // 1) text going outside the frame
-  // 2) text becoming a tiny narrow column in the middle
-  const maxLinesPerPage = 2;
   const lineMaxEm = getNaturalLineMaxEm({ fontSize, isLandscape, isSquare });
-  const pageMaxEm = lineMaxEm * maxLinesPerPage * 0.92;
+  const shortAyahMaxEm = lineMaxEm * 1.02;
 
-  const pages: CaptionPage[] = [];
-  let pageWords: Array<{ word: string; originalIndex: number }> = [];
-  let pageEm = 0;
+  const allWords = words.map((word, index) => ({
+    word,
+    originalIndex: index,
+  }));
 
-  words.forEach((word, index) => {
-    const wordEm = estimateArabicWordWidthEm(word);
-    const spaceEm = pageWords.length ? 0.42 : 0;
-    const nextEm = pageEm + spaceEm + wordEm;
+  const totalEm = allWords.reduce((sum, item, index) => {
+    return sum + estimateArabicWordWidthEm(item.word) + (index > 0 ? 0.42 : 0);
+  }, 0);
 
-    const shouldBreak =
-      pageWords.length > 0 &&
-      nextEm > pageMaxEm &&
-      pageEm >= pageMaxEm * 0.55;
-
-    if (shouldBreak) {
-      pages.push({ lines: splitCaptionPageIntoLines(pageWords).slice(0, 2) });
-      pageWords = [];
-      pageEm = 0;
-    }
-
-    pageWords.push({ word, originalIndex: index });
-    pageEm += (pageWords.length > 1 ? 0.42 : 0) + wordEm;
-  });
-
-  if (pageWords.length) {
-    pages.push({ lines: splitCaptionPageIntoLines(pageWords).slice(0, 2) });
+  // Short ayahs must stay on one line.
+  if (allWords.length <= 7 || totalEm <= shortAyahMaxEm) {
+    return [{ lines: [allWords] }];
   }
 
-  return pages.length ? pages : [{ lines: splitCaptionPageIntoLines(words.map((word, index) => ({ word, originalIndex: index }))).slice(0, 2) }];
+  const pages: CaptionPage[] = [];
+  let currentPageLines: Array<Array<{ word: string; originalIndex: number }>> = [];
+  let currentLine: Array<{ word: string; originalIndex: number }> = [];
+  let currentLineEm = 0;
+
+  const flushLine = () => {
+    if (!currentLine.length) return;
+
+    currentPageLines.push(currentLine);
+    currentLine = [];
+    currentLineEm = 0;
+
+    if (currentPageLines.length >= 2) {
+      pages.push({ lines: currentPageLines.slice(0, 2) });
+      currentPageLines = [];
+    }
+  };
+
+  allWords.forEach((item) => {
+    const wordEm = estimateArabicWordWidthEm(item.word);
+    const spaceEm = currentLine.length ? 0.42 : 0;
+    const nextEm = currentLineEm + spaceEm + wordEm;
+
+    if (
+      currentLine.length > 0 &&
+      nextEm > lineMaxEm &&
+      currentLineEm >= lineMaxEm * 0.42
+    ) {
+      flushLine();
+    }
+
+    currentLine.push(item);
+    currentLineEm += (currentLine.length > 1 ? 0.42 : 0) + wordEm;
+  });
+
+  flushLine();
+
+  if (currentPageLines.length) {
+    pages.push({ lines: currentPageLines.slice(0, 2) });
+  }
+
+  const balancedPages = pages.map((page) =>
+    balanceCaptionPageLines({
+      page,
+      lineMaxEm,
+      isLandscape,
+      isSquare,
+    }),
+  );
+
+  return balancedPages.length ? balancedPages : [{ lines: [allWords] }];
+}
+
+function balanceCaptionPageLines({
+  page,
+  lineMaxEm,
+  isLandscape,
+  isSquare,
+}: {
+  page: CaptionPage;
+  lineMaxEm: number;
+  isLandscape: boolean;
+  isSquare: boolean;
+}): CaptionPage {
+  if (!page.lines || page.lines.length !== 2) {
+    return page;
+  }
+
+  const items = page.lines.flat();
+  if (items.length <= 3) {
+    return page;
+  }
+
+  const currentFirst = page.lines[0];
+  const currentSecond = page.lines[1];
+  const currentScore = getLineBalanceScore(currentFirst, currentSecond, lineMaxEm);
+  let bestLines = page.lines;
+  let bestScore = currentScore;
+
+  for (let split = 2; split <= items.length - 2; split += 1) {
+    const first = items.slice(0, split);
+    const second = items.slice(split);
+    const firstEm = getCaptionLineWidthEm(first);
+    const secondEm = getCaptionLineWidthEm(second);
+    const maxAllowed = lineMaxEm * (isLandscape ? 0.99 : isSquare ? 0.985 : 0.98);
+
+    if (firstEm > maxAllowed || secondEm > maxAllowed) {
+      continue;
+    }
+
+    const score = getLineBalanceScore(first, second, lineMaxEm);
+    if (score < bestScore) {
+      bestScore = score;
+      bestLines = [first, second];
+    }
+  }
+
+  return { lines: bestLines };
+}
+
+function getLineBalanceScore(
+  first: Array<{ word: string; originalIndex: number }>,
+  second: Array<{ word: string; originalIndex: number }>,
+  lineMaxEm: number,
+) {
+  const firstEm = getCaptionLineWidthEm(first);
+  const secondEm = getCaptionLineWidthEm(second);
+  const balancePenalty = Math.abs(firstEm - secondEm) * 8;
+  const unusedSpacePenalty = Math.abs(lineMaxEm - Math.max(firstEm, secondEm)) * 0.35;
+  const orphanPenalty = first.length <= 1 || second.length <= 1 ? 120 : 0;
+
+  return balancePenalty + unusedSpacePenalty + orphanPenalty;
+}
+
+function getCaptionLineWidthEm(
+  line: Array<{ word: string; originalIndex: number }>,
+) {
+  return line.reduce((sum, item, index) => {
+    return sum + estimateArabicWordWidthEm(item.word) + (index > 0 ? 0.42 : 0);
+  }, 0);
 }
 
 function getNaturalLineMaxEm({
@@ -2096,8 +2391,8 @@ function getNaturalLineMaxEm({
 }) {
   // Tuned for 90% caption width. Larger than the previous nowrap line limit,
   // because this is a natural wrapping block, not a hard one-line layout.
-  const base = isLandscape ? 34 : isSquare ? 19.5 : 17.2;
-  const sizeAdjustment = clampNumber(58 / Math.max(fontSize || 58, 1), 0.88, 1.22);
+  const base = isLandscape ? 35.5 : isSquare ? 21.4 : 18.9;
+  const sizeAdjustment = clampNumber(68 / Math.max(fontSize || 68, 1), 0.92, 1.16);
 
   return base * sizeAdjustment;
 }

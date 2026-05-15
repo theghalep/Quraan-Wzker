@@ -123,6 +123,7 @@ type ExportPresetId =
 type ExportQualityId = "draft" | "standard" | "high" | "ultra";
 
 type HookStyle = "reflection" | "question" | "warning" | "emotional";
+type CaptionDisplayMode = "paged" | "line" | "scroll";
 
 const EXPORT_QUALITIES: Array<{
   id: ExportQualityId;
@@ -320,7 +321,7 @@ export default function Home() {
   const [exporting, setExporting] = useState(false);
 
   const [textColor, setTextColor] = useState("#ffffff");
-  const [textSize, setTextSize] = useState("82");
+  const [textSize, setTextSize] = useState("88");
   const [fontFamily, setFontFamily] = useState("Amiri Quran");
 
   const [backgroundStyle, setBackgroundStyle] = useState(DEFAULT_IMAGE_BACKGROUND.id);
@@ -342,11 +343,13 @@ export default function Home() {
   const [textPosition, setTextPosition] = useState("center");
   const [animationStyle, setAnimationStyle] = useState("slide");
   const [wordSpeed, setWordSpeed] = useState("normal");
+  const [captionDisplayMode, setCaptionDisplayMode] =
+    useState<CaptionDisplayMode>("paged");
 
   const [showTafsir, setShowTafsir] = useState(true);
   const [tafsirText, setTafsirText] = useState("تفسير مختصر يظهر هنا أسفل الآية، ويمكن لاحقًا جلبه تلقائيًا لكل آية.");
   const [tafsirColor, setTafsirColor] = useState("#ffffff");
-  const [tafsirSize, setTafsirSize] = useState("30");
+  const [tafsirSize, setTafsirSize] = useState("34");
   const [tafsirSource, setTafsirSource] = useState("muyassar");
 
   const [showWordHighlight, setShowWordHighlight] = useState(true);
@@ -563,6 +566,7 @@ export default function Home() {
     textPosition,
     animationStyle,
     wordSpeed,
+    captionDisplayMode,
     showWordHighlight,
     showTafsir,
     tafsirText,
@@ -632,6 +636,7 @@ export default function Home() {
       textPosition,
       animationStyle,
       wordSpeed,
+      captionDisplayMode,
       showWordHighlight,
       showTafsir,
       tafsirText,
@@ -1781,6 +1786,7 @@ export default function Home() {
           textPosition,
           animationStyle,
           wordSpeed,
+          captionDisplayMode,
           showWordHighlight,
           showTafsir,
           tafsirText,
@@ -1947,10 +1953,14 @@ export default function Home() {
               <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-[34px] border border-white/15 bg-black p-2 shadow-[0_18px_48px_rgba(0,0,0,0.55)]">
                 <div className="pointer-events-none absolute -inset-1 rounded-[40px] border border-emerald-400/20" />
                 <div
+                  onClick={() => setPreviewPlaying((value) => !value)}
+                  role="button"
+                  aria-label="تشغيل أو إيقاف المعاينة"
                   style={{
                     ...previewFrameStyle,
                     overflow: "hidden",
                     borderRadius: 28,
+                    cursor: "pointer",
                   }}
                   className="relative bg-black"
                 >
@@ -1972,7 +1982,7 @@ export default function Home() {
                         : "Vertical"}
                   </div>
 
-                  <div className={`pointer-events-auto absolute inset-x-4 bottom-4 z-20 rounded-[26px] border border-white/10 bg-black/55 p-3 ${isMobile ? "shadow-lg backdrop-blur-sm" : "shadow-2xl backdrop-blur-xl"}`}>
+                  <div className="hidden">
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <button
                         type="button"
@@ -3363,10 +3373,22 @@ export default function Home() {
 
                       <div className="space-y-4">
                         <Toggle
-                          label="تفعيل تمييز الكلمات"
+                          label="تلوين الكلمة أثناء القراءة"
                           checked={showWordHighlight}
                           onChange={setShowWordHighlight}
                         />
+
+                        <SelectBox
+                          label="طريقة عرض الآيات"
+                          value={captionDisplayMode}
+                          onChange={(value) =>
+                            setCaptionDisplayMode(value as CaptionDisplayMode)
+                          }
+                        >
+                          <option value="paged">صفحتين / سطرين</option>
+                          <option value="line">سطر واحد فقط</option>
+                          <option value="scroll">تصعد لأعلى وتختفي</option>
+                        </SelectBox>
 
                         <div className="grid grid-cols-2 gap-3">
                           <SelectBox
